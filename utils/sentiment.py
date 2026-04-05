@@ -2,10 +2,14 @@
 utils/sentiment.py — 4-model ensemble sentiment analysis.
 
 Models:
-  1. VADER          — rule-based
-  2. TextBlob       — pattern-based
-  3. Transformer    — FinBERT / DistilBERT (optional)
-  4. Decision Tree  — meta-classifier combining all scores
+  1. Groq LLM (via processor.py — most accurate)
+  2. VADER — rule-based
+  3. TextBlob — pattern-based
+  4. FinBERT / DistilBERT — transformer (optional)
+  5. Decision Tree meta-classifier combining all scores
+
+Groq result is used as primary label when available.
+ML ensemble provides scores and fallback label.
 """
 
 import re
@@ -20,11 +24,13 @@ def _vader_scores(text: str) -> dict:
     try:
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
         analyzer = SentimentIntensityAnalyzer()
-        chunks = [text[i:i+4000] for i in range(0, len(text), 4000) if text[i:i+4000].strip()]
+        chunks = [text[i:i+4000] for i in range(0, len(text), 4000)
+                  if text[i:i+4000].strip()]
         if not chunks:
             return {"compound": 0.0, "pos": 0.33, "neg": 0.33, "neu": 0.34}
         all_s = [analyzer.polarity_scores(c) for c in chunks]
-        return {k: sum(s[k] for s in all_s) / len(all_s) for k in ("compound","pos","neg","neu")}
+        return {k: sum(s[k] for s in all_s) / len(all_s)
+                for k in ("compound", "pos", "neg", "neu")}
     except Exception:
         return {"compound": 0.0, "pos": 0.33, "neg": 0.33, "neu": 0.34}
 
@@ -35,7 +41,10 @@ def _textblob_scores(text: str) -> dict:
     try:
         from textblob import TextBlob
         b = TextBlob(text[:8000])
-        return {"polarity": b.sentiment.polarity, "subjectivity": b.sentiment.subjectivity}
+        return {
+            "polarity": b.sentiment.polarity,
+            "subjectivity": b.sentiment.subjectivity
+        }
     except Exception:
         return {"polarity": 0.0, "subjectivity": 0.5}
 
@@ -49,8 +58,10 @@ def _transformer_score(text: str) -> float:
     try:
         if _trans_pipe is None:
             from transformers import pipeline as hf_pipeline
-            for mid in ["ProsusAI/finbert",
-                        "distilbert-base-uncased-finetuned-sst-2-english"]:
+            for mid in [
+                "ProsusAI/finbert",
+                "distilbert-base-uncased-finetuned-sst-2-english"
+            ]:
                 try:
                     _trans_pipe = hf_pipeline(
                         "text-classification", model=mid,
@@ -62,7 +73,8 @@ def _transformer_score(text: str) -> float:
         if not _trans_pipe:
             return 0.0
         r = _trans_pipe(text[:1500])[0]
-        label, score = r["label"].lower(), r["score"]
+        label = r["label"].lower()
+        score = r["score"]
         if "positive" in label:
             return score
         elif "negative" in label:
@@ -72,13 +84,14 @@ def _transformer_score(text: str) -> float:
         return 0.0
 
 
-# ── Sentence-level average ────────────────────────────────────────────────────
+# ── Sentence-level features ───────────────────────────────────────────────────
 
 def _sent_features(text: str) -> dict:
     try:
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
         analyzer = SentimentIntensityAnalyzer()
-        sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text[:6000]) if len(s.strip()) > 10]
+        sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text[:6000])
+                 if len(s.strip()) > 10]
         if not sents:
             return {"avg": 0.0, "prop_pos": 0.33, "prop_neg": 0.33}
         comps = [analyzer.polarity_scores(s)["compound"] for s in sents]
@@ -124,17 +137,17 @@ class _DTMeta:
             self._dt = DecisionTreeClassifier(max_depth=8, random_state=42)
             self._dt.fit(X, y)
         except Exception as e:
-            logger.warning(f"DT meta-classifier not available: {e}")
+            logger.warning(f"DT meta-classifier unavailable: {e}")
 
     def predict(self, feats: list) -> tuple:
         labels = {0: "Negative", 1: "Neutral", 2: "Positive"}
         if self._dt is None:
             c = feats[0]
             if c >= 0.05:
-                return "Positive", {"Positive": round(c,3), "Neutral": round(1-c,3), "Negative": 0.0}
+                return "Positive", {"Positive": 0.80, "Neutral": 0.15, "Negative": 0.05}
             if c <= -0.05:
-                return "Negative", {"Positive": 0.0, "Neutral": round(1+c,3), "Negative": round(-c,3)}
-            return "Neutral", {"Positive": 0.1, "Neutral": 0.8, "Negative": 0.1}
+                return "Negative", {"Positive": 0.05, "Neutral": 0.15, "Negative": 0.80}
+            return "Neutral", {"Positive": 0.10, "Neutral": 0.80, "Negative": 0.10}
 
         import numpy as np
         X = np.array([feats])
@@ -163,14 +176,13 @@ class SentimentAnalyzer:
             sents["avg"], sents["prop_pos"], sents["prop_neg"],
             trans,
         ]
+
         label, scores = self._meta.predict(feats)
 
-        # Strong negative agreement → force Negative
+        # Strong agreement override — both VADER and TextBlob agree
         if vader["compound"] <= -0.05 and blob["polarity"] < 0:
             label = "Negative"
             scores = {"Positive": 0.05, "Neutral": 0.15, "Negative": 0.80}
-
-        # Strong positive agreement → force Positive
         elif vader["compound"] >= 0.05 and blob["polarity"] > 0:
             label = "Positive"
             scores = {"Positive": 0.80, "Neutral": 0.15, "Negative": 0.05}
