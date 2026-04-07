@@ -1,7 +1,6 @@
-
 # 📄 AI-Powered Document Analysis API
 
-> **HCL Hackathon — Track 2: AI-Powered Document Analysis & Extraction**
+> **HCL GUVI BuildBridge Hackathon 2026 — Track 2: AI-Powered Document Analysis & Extraction**
 
 An intelligent, production-grade document processing system that accepts **PDF**, **DOCX**, and **image** files and runs a full AI + ML + NLP pipeline to automatically extract key information.
 
@@ -49,91 +48,68 @@ This API accepts a single Base64-encoded document and returns a rich JSON respon
 ### AI / LLM
 | Tool | Model | Purpose |
 |------|-------|---------|
-| Groq API | `llama-3.3-70b-versatile` | Primary: summary + entities + sentiment (one call) |
+| Groq API | `llama-3.3-70b-versatile` | Primary: summary + entities + sentiment in one call |
 | FinBERT | `ProsusAI/finbert` | Transformer-based sentiment analysis |
 
 ### ML / NLP
 | Tool | Purpose |
 |------|---------|
-| spaCy `en_core_web_lg` | Named Entity Recognition (PERSON, ORG, GPE, DATE, MONEY) |
+| spaCy `en_core_web_lg` | Named Entity Recognition |
 | scikit-learn RandomForest | Document type classification (10 categories) |
-| scikit-learn DecisionTree | Sentiment meta-classifier combining 4 model scores |
+| scikit-learn DecisionTree | Sentiment meta-classifier |
 | scikit-learn RandomForest | NER post-filter (rejects false positives) |
 | VADER | Rule-based sentiment analysis |
 | TextBlob | Pattern-based sentiment analysis |
 | YAKE | Unsupervised keyphrase extraction |
-| TF-IDF | N-gram keyphrase scoring + TextRank extractive summarisation |
+| TF-IDF | N-gram keyphrase scoring + TextRank summarisation |
 
 ### Document Extraction
 | Format | Tools |
 |--------|-------|
-| PDF | pdfplumber (primary) → PyMuPDF (fallback) → Tesseract OCR (last resort) |
+| PDF | pdfplumber → PyMuPDF → Tesseract OCR |
 | DOCX | python-docx (paragraphs + tables + headers + footers) |
-| Image | OpenCV 7-step preprocessing → Tesseract OCR (PSM 6 + PSM 3 + PSM 11) |
+| Image | OpenCV 7-step pipeline → Tesseract (PSM 6 + 3 + 11) |
 
 ---
 
 ## 🤖 AI Tools Used
 
-> **Mandatory AI Tool Policy disclosure — all AI assistance listed below**
+> **Mandatory AI Tool Policy disclosure**
 
 | Tool | How Used |
 |------|---------|
-| **Groq (Llama 3.3 70B)** | Primary AI engine — generates summary, extracts entities, classifies sentiment in one API call |
-| **FinBERT** (`ProsusAI/finbert`) | Deep learning transformer sentiment analysis (finance-aware) |
-| **spaCy** `en_core_web_lg` | ML-based Named Entity Recognition |
-| **VADER** | Rule-based sentiment model (model 1 of 4 in ensemble) |
-| **TextBlob** | Pattern-based NLP sentiment (model 2 of 4) |
-| **YAKE** | Unsupervised statistical keyphrase extraction |
-| **scikit-learn** | Random Forest (document classifier + NER filter) + Decision Tree (sentiment meta-classifier) |
+| **Groq Llama 3.3 70B** | Primary AI — summary, entities, sentiment in one API call |
+| **FinBERT** | Deep learning transformer sentiment analysis |
+| **spaCy `en_core_web_lg`** | ML-based Named Entity Recognition |
+| **VADER** | Rule-based sentiment (model 1 of 4) |
+| **TextBlob** | Pattern-based sentiment (model 2 of 4) |
+| **YAKE** | Unsupervised keyphrase extraction |
+| **scikit-learn** | Random Forest + Decision Tree classifiers |
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ Architecture
 
 ```
 POST /api/document-analyze
          │
-    [Auth Check]
-    x-api-key header → SHA-256 constant-time comparison → 401 if invalid
+    [Auth] x-api-key → SHA-256 → 401 if invalid
          │
-    [Text Extraction]
-    ┌────┴─────────────────────────────┐
-    │ PDF  → pdfplumber                │
-    │       → PyMuPDF (fallback)       │
-    │       → Tesseract OCR (fallback) │
-    │ DOCX → python-docx               │
-    │        paragraphs + tables +     │
-    │        headers + footers         │
-    │ IMG  → OpenCV preprocessing      │
-    │        (CLAHE + blur + thresh +  │
-    │         morph + deskew +         │
-    │         dark-sidebar detection)  │
-    │       → Tesseract PSM 6/3/11     │
-    └──────────────────────────────────┘
+    [Extraction]
+    PDF  → pdfplumber → PyMuPDF → OCR
+    DOCX → python-docx
+    IMG  → OpenCV pipeline → Tesseract
          │
-    [Text Preprocessing]
-    Unicode fix → OCR noise removal →
-    Hyphenation fix → Whitespace norm
+    [Preprocessing]
+    Unicode → OCR noise → Hyphenation → Whitespace
          │
-    ┌────┴────────────────────────────────────────────────┐
-    │                 AI + ML Pipeline                    │
-    │                                                     │
-    │  Groq LLM (primary)                                 │
-    │  ┌───────────────────────────────────────────────┐  │
-    │  │ ONE API call → summary + entities + sentiment │  │
-    │  └───────────────────────────────────────────────┘  │
-    │                       +                             │
-    │  spaCy NER + Regex (always runs, merged with Groq)  │
-    │  RF post-filter (rejects false positives)           │
-    │                       +                             │
-    │  Sentiment ensemble (VADER+TextBlob+FinBERT+DT)     │
-    │  Decision Tree meta-classifier (combines 4 scores)  │
-    │                       +                             │
-    │  Random Forest document classifier (10 types)       │
-    │  YAKE + TF-IDF keyphrase extractor                  │
-    │  Readability stats (Flesch, FK, Gunning Fog)        │
-    └─────────────────────────────────────────────────────┘
+    [AI + ML Pipeline]
+    Groq LLM → summary + entities + sentiment (JSON)
+    spaCy NER + Regex → merged with Groq entities
+    VADER + TextBlob + FinBERT + DT → sentiment ensemble
+    Random Forest → document type (10 categories)
+    YAKE + TF-IDF → keyphrases
+    Flesch + FK + Gunning Fog → readability
          │
     [JSON Response]
 ```
@@ -146,35 +122,38 @@ POST /api/document-analyze
 AI-Document-Analysis/
 │
 ├── main.py                  ← FastAPI app, auth, routing
+├── .env                     ← API keys (never commit this)
 ├── .env.example             ← Template for environment variables
 ├── requirements.txt         ← All Python dependencies
-├── test.py                  ← End-to-end test runner
 ├── README.md                ← This file
+│
+├── test.py                  ← Test with 3 embedded sample files
+├── analyze_any.py           ← Analyze ANY file from your PC
 │
 ├── pipeline/
 │   ├── __init__.py
-│   └── processor.py         ← Master orchestrator (runs all 8 stages)
+│   └── processor.py         ← Master orchestrator
 │
 ├── utils/
 │   ├── __init__.py
 │   ├── extractor.py         ← PDF/DOCX/Image text extraction
 │   ├── preprocessor.py      ← Text cleaning and normalization
-│   ├── summarizer.py        ← Groq LLM full analysis + extractive fallback
-│   ├── entity.py            ← spaCy + regex + RF post-filter NER
-│   ├── sentiment.py         ← 4-model ensemble + Decision Tree meta-classifier
-│   └── stats.py             ← Readability metrics + document statistics
+│   ├── summarizer.py        ← Groq LLM + extractive fallback
+│   ├── entity.py            ← spaCy + regex + RF NER
+│   ├── sentiment.py         ← 4-model ensemble + DT
+│   └── stats.py             ← Readability + statistics
 │
 └── ml/
     ├── __init__.py
-    ├── classifier.py        ← Random Forest document type classifier
-    └── keyphrase.py         ← YAKE + TF-IDF hybrid keyphrase extractor
+    ├── classifier.py        ← Random Forest document classifier
+    └── keyphrase.py         ← YAKE + TF-IDF keyphrase extractor
 ```
 
 ---
 
 ## ⚙️ Setup Instructions
 
-### 1. Clone the Repository
+### 1. Clone Repository
 ```bash
 git clone https://github.com/Chirag0071/AI-Document-Analysis.git
 cd AI-Document-Analysis
@@ -183,66 +162,37 @@ cd AI-Document-Analysis
 ### 2. Create Virtual Environment
 ```bash
 python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Linux/macOS
-source venv/bin/activate
+venv\Scripts\activate          # Windows
+source venv/bin/activate       # Linux/macOS
 ```
 
-### 3. Install Python Dependencies
+### 3. Install All Dependencies
 ```bash
 pip install -r requirements.txt
-```
-
-### 4. Download spaCy Model
-```bash
 python -m spacy download en_core_web_lg
-```
-
-### 5. Download TextBlob Corpora
-```bash
 python -m textblob.download_corpora
 ```
 
-### 6. Install Tesseract OCR
+### 4. Install Tesseract OCR
+- **Windows:** Download from https://github.com/UB-Mannheim/tesseract/wiki → Install to default path
+- **Ubuntu:** `sudo apt-get install tesseract-ocr`
+- **macOS:** `brew install tesseract`
 
-**Windows:**
-- Download: https://github.com/UB-Mannheim/tesseract/wiki
-- Install to `C:\Program Files\Tesseract-OCR\`
-
-**Ubuntu/Debian:**
-```bash
-sudo apt-get install tesseract-ocr
-```
-
-**macOS:**
-```bash
-brew install tesseract
-```
-
-### 7. Set Environment Variables
+### 5. Configure Environment
 ```bash
 cp .env.example .env
 ```
-
 Edit `.env`:
 ```
 API_KEY=sk_track2_987654321
 GROQ_API_KEY=your_groq_api_key_here
 ```
+Get free Groq key at: https://console.groq.com/
 
-Get a free Groq API key at: https://console.groq.com/
-
-### 8. Run the Server
+### 6. Run Server
 ```bash
 uvicorn main:app --reload
 ```
-
-- API: `http://localhost:8000`
-- Swagger UI: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/health`
 
 ---
 
@@ -256,208 +206,147 @@ uvicorn main:app --reload
 | GET | `/health` | Health check |
 | POST | `/api/document-analyze` | Analyze a document |
 
-### POST /api/document-analyze
-
-**Headers**
-```
-Content-Type: application/json
-x-api-key: sk_track2_987654321
-```
-
-**Request Body**
+### Request
 ```json
 {
   "fileName": "invoice.pdf",
   "fileType": "pdf",
-  "fileBase64": "<base64 encoded file content>"
+  "fileBase64": "<base64 string>"
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `fileName` | string | Yes | Original file name |
-| `fileType` | string | Yes | `pdf`, `docx`, or `image` |
-| `fileBase64` | string | Yes | Base64-encoded file content |
-
-### cURL Example
+### cURL
 ```bash
 curl -X POST https://ai-document-analysis.onrender.com/api/document-analyze \
   -H "Content-Type: application/json" \
   -H "x-api-key: sk_track2_987654321" \
-  -d '{
-    "fileName": "sample.pdf",
-    "fileType": "pdf",
-    "fileBase64": "JVBERi0xLjQ..."
-  }'
+  -d '{"fileName":"doc.pdf","fileType":"pdf","fileBase64":"JVBERi0..."}'
 ```
 
-### Success Response (200)
+### Response (200)
 ```json
 {
   "status": "success",
-  "fileName": "sample1-Technology_Industry_Analysis.pdf",
-  "summary": "This document is an industry analysis report on the expansion of artificial intelligence innovation, highlighting key players such as Google, Microsoft, and NVIDIA across sectors including healthcare, finance, manufacturing, and education.",
+  "fileName": "doc.pdf",
+  "summary": "This document is a technology industry analysis...",
   "entities": {
-    "names": [],
-    "dates": ["June 2020", "March 2017"],
-    "organizations": ["Google", "Microsoft", "NVIDIA"],
-    "locations": ["New York", "Brooklyn"],
-    "amounts": ["₹10,000", "$5,000"],
-    "percentages": ["30%", "25%"],
-    "emails": [],
-    "phones": [],
+    "names": ["Ravi Kumar"],
+    "dates": ["10 March 2026"],
+    "organizations": ["ABC Pvt Ltd"],
+    "locations": ["Mumbai"],
+    "amounts": ["₹10,000"],
+    "percentages": ["30%"],
+    "emails": ["info@abc.com"],
+    "phones": ["+91 9876543210"],
     "urls": []
   },
   "sentiment": "Positive",
-  "sentiment_scores": {
-    "Positive": 0.80,
-    "Neutral": 0.15,
-    "Negative": 0.05
-  },
-  "document_type": "Report / Article",
-  "key_phrases": [
-    "artificial intelligence",
-    "machine learning",
-    "technology companies"
-  ],
+  "sentiment_scores": {"Positive": 0.80, "Neutral": 0.15, "Negative": 0.05},
+  "document_type": "Invoice / Receipt",
+  "key_phrases": ["invoice", "payment due", "ABC Pvt Ltd"],
   "document_stats": {
-    "word_count": 412,
-    "sentence_count": 18,
-    "paragraph_count": 8,
-    "character_count": 2841,
-    "avg_sentence_length": 22.9,
-    "avg_word_length": 5.2,
-    "lexical_diversity": 0.612,
-    "reading_time_minutes": 2.1,
+    "word_count": 250,
+    "sentence_count": 12,
+    "reading_time_minutes": 1.3,
     "language": "en",
-    "readability": {
-      "flesch_reading_ease": 42.3,
-      "flesch_kincaid_grade": 13.1,
-      "gunning_fog_index": 16.4,
-      "interpretation": "Difficult"
-    }
+    "readability": {"flesch_reading_ease": 58.2, "interpretation": "Standard"}
   },
-  "processing_time_seconds": 3.24
+  "processing_time_seconds": 2.84
 }
 ```
 
-### Error Responses
+### Error Codes
 
-| HTTP Code | Reason |
-|-----------|--------|
-| 401 | Missing or invalid `x-api-key` header |
-| 400 | Invalid base64 encoding or unsupported fileType |
-| 413 | File exceeds 50 MB limit |
-| 422 | No text could be extracted from document |
+| Code | Reason |
+|------|--------|
+| 401 | Invalid or missing x-api-key |
+| 400 | Invalid base64 or unsupported fileType |
+| 413 | File exceeds 50 MB |
+| 422 | No text extractable |
 | 500 | Internal processing error |
 
 ---
 
-## 🧩 Approach & Data Extraction Strategy
+## 🧩 Approach & Strategy
 
-### 1. Text Extraction
+### Text Extraction
+- **PDF:** pdfplumber (layout-aware) → PyMuPDF (fallback) → Tesseract OCR (last resort for scanned PDFs)
+- **DOCX:** python-docx reads all paragraphs, table cells, headers, footers
+- **Image:** OpenCV pipeline — CLAHE contrast → Gaussian blur → adaptive threshold → morphological close → deskew → dark-sidebar detection → Tesseract with PSM 6, 3, 11
 
-**PDF — 3-layer fallback:**
-1. `pdfplumber` — layout-aware extraction, preserves text positions
-2. `PyMuPDF (fitz)` — faster, handles more PDF variants
-3. Tesseract OCR — rasterizes each page at 2x zoom for scanned PDFs
+### Text Preprocessing
+Unicode normalization → OCR garbage removal (lines <40% alphanumeric) → hyphenation repair → whitespace normalization
 
-**DOCX — Full document traversal:**
-- All paragraphs with heading detection
-- All table cells (rows joined with ` | `)
-- Header and footer text (often contains company names, dates)
+### AI Summarisation
+1. Groq Llama 3.3 70B — ONE API call returns summary + entities + sentiment as structured JSON (temperature 0.1 for consistency)
+2. TF-IDF TextRank extractive fallback (if Groq fails)
 
-**Image — 7-step OpenCV pipeline:**
-1. Decode image → BGR
-2. Upscale images smaller than 1500px
-3. Dark sidebar detection (for styled resumes)
-4. Grayscale + CLAHE contrast enhancement
-5. Gaussian blur (noise reduction)
-6. Adaptive Gaussian thresholding (binarization)
-7. Morphological close (reconnects broken characters)
-8. Deskewing (fixes rotation in scanned documents)
-9. Tesseract PSM 6, 3, 11 — picks longest result
+### Named Entity Recognition
+- **Groq LLM:** Context-aware extraction via structured JSON prompt
+- **spaCy en_core_web_lg:** PERSON, ORG, GPE, LOC, DATE, MONEY, PERCENT + Random Forest post-filter (rejects false positives) + validators (`_valid_name`, `_valid_org`, `_valid_date`, `_valid_amount`)
+- **25+ Regex patterns:** Indian currency (₹, INR, Rs.), ISO dates, phones, emails, URLs, percentages
+- All merged + case-insensitive deduplicated
 
-### 2. Text Preprocessing
+### Sentiment Analysis
+4-model ensemble with Decision Tree meta-classifier:
+1. VADER (rule-based, chunk-averaged)
+2. TextBlob (pattern-based polarity)
+3. FinBERT/DistilBERT (transformer)
+4. Decision Tree (10-feature meta-classifier)
 
-- Unicode normalization (NFC) + artifact fixes
-- OCR garbage line removal (lines with <40% alphanumeric ratio)
-- End-of-line hyphenation repair
-- Structural marker removal
-- Whitespace normalization
+Strong agreement override: if VADER and TextBlob both agree → force label. Groq label takes precedence when available.
 
-### 3. AI Summarisation
+### Document Classification
+Random Forest (300 trees, balanced weights) + TF-IDF (800 features, bigrams) → 10 types with confidence threshold 0.30.
 
-**Primary — Groq Llama 3.3 70B:**
-- Single API call returns summary + entities + sentiment as JSON
-- Temperature 0.1 for consistent factual output
-- JSON validation with fallback if response is malformed
+### Keyphrase Extraction
+`score = 0.5×YAKE + 0.4×TF-IDF + 0.1×position_bonus`
 
-**Fallback — TF-IDF TextRank:**
-- Splits text into sentences
-- Computes TF-IDF score per sentence
-- Selects top 3 sentences, preserving original order
-
-### 4. Named Entity Recognition (3 layers)
-
-**Layer 1 — Groq LLM:** Context-aware entity extraction via structured JSON prompt
-
-**Layer 2 — spaCy `en_core_web_lg`:** Extracts PERSON, ORG, GPE, LOC, DATE, MONEY, PERCENT with:
-- Stopword filter
-- OCR noise filter (removes verbs like "transformed", "boosted")
-- Fake org filter (removes sentence fragments)
-- Random Forest post-filter (10 heuristic features)
-- Validators: `_valid_name()`, `_valid_org()`, `_valid_date()`, `_valid_amount()`
-
-**Layer 3 — 25+ Regex patterns:** Indian currency (₹, INR, Rs.), dates, phones, emails, URLs, percentages
-
-All layers merged and deduplicated (case-insensitive, substring removal).
-
-### 5. Sentiment Analysis (4-model ensemble)
-
-| Model | Type |
-|-------|------|
-| VADER | Rule-based |
-| TextBlob | Pattern-based |
-| FinBERT/DistilBERT | Transformer DL |
-| Decision Tree | Meta-classifier |
-
-Feature vector (10 features) fed into Decision Tree meta-classifier. Strong agreement override: if VADER and TextBlob both agree, label is forced. Groq label takes precedence when available.
-
-### 6. Document Classification
-
-- Random Forest: 300 trees, balanced class weights
-- TF-IDF: 800 features, bigrams, sublinear TF
-- 10 document types, confidence threshold 0.30
-- Trained on 250 synthetic documents
-
-### 7. Keyphrase Extraction
-
-```
-final_score = 0.5 × YAKE + 0.4 × TF-IDF + 0.1 × position_bonus
-```
-
-YAKE (unsupervised, language-agnostic) + TF-IDF n-grams combined by hybrid reranker.
-
-### 8. Readability Statistics
-
-| Metric | Formula |
-|--------|---------|
-| Flesch Reading Ease | `206.835 - 1.015×ASL - 84.6×ASW` |
-| Flesch-Kincaid Grade | `0.39×ASL + 11.8×ASW - 15.59` |
-| Gunning Fog Index | `0.4×(ASL + pct_complex_words)` |
-| Lexical Diversity | `unique_words / total_words` |
+### Readability
+Flesch Reading Ease, Flesch-Kincaid Grade Level, Gunning Fog Index, Lexical Diversity, Reading Time.
 
 ---
 
-## 🔐 Authentication
+## 📂 Analyzing Any Document
 
-All requests must include:
+You can analyze **any PDF, DOCX, or image** from your PC without changing any code:
+
+### Interactive Menu
+```bash
+python analyze_any.py
 ```
-x-api-key: sk_track2_987654321
+Shows all supported files in folder — just type a number to analyze.
+
+### Direct File Path
+```bash
+python analyze_any.py C:\Users\hp\Downloads\invoice.pdf
+python analyze_any.py "C:\Users\hp\Desktop\my contract.docx"
+python analyze_any.py C:\Users\hp\Pictures\receipt.jpg
 ```
 
-Uses **constant-time SHA-256 comparison** to prevent timing attacks. Returns `401 Unauthorized` for invalid keys.
+### Supported Formats
+| Extension | Type |
+|-----------|------|
+| `.pdf` | pdf |
+| `.docx` `.doc` | docx |
+| `.jpg` `.jpeg` `.png` `.bmp` `.tiff` `.webp` | image |
+
+Results are printed in the terminal with colors. You can also save the full JSON result to a file.
+
+---
+
+## 🧪 Testing
+
+```bash
+# Terminal 1 — keep server running
+uvicorn main:app --reload
+
+# Terminal 2 — test with 3 sample files (embedded, no files needed)
+python test.py
+
+# Terminal 2 — analyze any file interactively
+python analyze_any.py
+```
 
 ---
 
@@ -466,110 +355,57 @@ Uses **constant-time SHA-256 comparison** to prevent timing attacks. Returns `40
 ### Step 1 — Push to GitHub
 ```bash
 git add .
-git commit -m "Deploy to Render"
+git commit -m "Final deployment"
 git push origin main
 ```
 
 ### Step 2 — Create Render Web Service
-1. Go to https://render.com → Sign up / Login with GitHub
+1. Go to https://render.com → Login with GitHub
 2. Click `New` → `Web Service`
-3. Connect your GitHub repo: `Chirag0071/AI-Document-Analysis`
-4. Configure settings:
+3. Connect: `Chirag0071/AI-Document-Analysis`
+
+### Step 3 — Configure
 
 | Setting | Value |
 |---------|-------|
-| Name | `ai-document-analysis` |
-| Region | Singapore (closest to India) |
-| Branch | `main` |
-| Runtime | `Python 3` |
+| Runtime | Python 3 |
 | Build Command | `pip install -r requirements.txt && python -m spacy download en_core_web_lg && python -m textblob.download_corpora` |
 | Start Command | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
 | Instance Type | Free |
 
-### Step 3 — Add Environment Variables
-In Render dashboard → `Environment` tab:
+### Step 4 — Environment Variables
 ```
 API_KEY = sk_track2_987654321
-GROQ_API_KEY = your_groq_api_key_here
+GROQ_API_KEY = your_groq_api_key
 ```
 
-### Step 4 — Deploy
-Click `Create Web Service` → Wait 5-10 minutes for build
+### Step 5 — Deploy
+Click `Create Web Service` → Wait 5-10 minutes → URL is live!
 
-Your live URL will be:
-```
-https://ai-document-analysis.onrender.com
-```
-
-### Step 5 — Verify Deployment
-```bash
-curl https://ai-document-analysis.onrender.com/health
-# Expected: {"status": "ok"}
-```
-
-### ⚠️ Render Free Tier Notes
-- Service sleeps after 15 minutes of inactivity
-- First request after sleep takes ~30 seconds (cold start)
-- 512 MB RAM — torch/transformers may be heavy; they will fall back gracefully if memory is exceeded
-- Add `PYTHONUNBUFFERED=1` as environment variable for better logs
+> Render free tier sleeps after 15 min inactivity. First request after sleep takes ~30s.
 
 ---
 
 ## ⚠️ Known Limitations
 
-| Limitation | Details |
-|------------|---------|
-| Scanned PDFs | OCR accuracy depends on scan quality |
-| Handwritten text | Tesseract not trained for handwriting |
-| Non-English documents | Models are English-optimised |
-| Large files | Truncated to 5,000 chars for Groq, 100,000 for spaCy |
-| Cold start on Render | First request after inactivity takes ~30s |
-| Processing time | Large PDFs with Groq: ~75s; DOCX/Image: 3-13s |
+| Issue | Detail |
+|-------|--------|
+| Scanned PDFs | OCR depends on scan quality |
+| Handwritten text | Not supported by Tesseract |
+| Non-English docs | English-optimised models |
+| Large files | Truncated to 5,000 chars for Groq |
+| Cold start | Render free: ~30s after inactivity |
 
 ---
 
-## 🧪 Testing
+## 🔐 Security
 
-```bash
-# Terminal 1 — start server
-uvicorn main:app --reload
-
-# Terminal 2 — run all 3 sample file tests
-python test.py
-```
-
----
-
-## 📦 requirements.txt
-
-```
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
-python-multipart==0.0.9
-python-dotenv==1.0.1
-pdfplumber==0.11.0
-PyMuPDF==1.24.5
-python-docx==1.1.2
-pytesseract==0.3.10
-Pillow==10.3.0
-opencv-python-headless==4.10.0.82
-spacy==3.7.5
-scikit-learn==1.5.0
-numpy==1.26.4
-groq
-transformers==4.41.2
-torch==2.3.0
-vaderSentiment==3.3.2
-textblob==0.18.0
-yake==0.4.8
-langdetect==1.0.9
-pydantic==2.7.1
-```
+API key validated using constant-time SHA-256 comparison (prevents timing attacks). All files processed in memory — no files saved to disk.
 
 ---
 
 ## 📜 License
 
-Built for HCL Hackathon — Track 2. All rights reserved.
+Built for **HCL GUVI BuildBridge Hackathon 2026** — Track 2.
 
 **Developer:** Chirag | GitHub: https://github.com/Chirag0071
