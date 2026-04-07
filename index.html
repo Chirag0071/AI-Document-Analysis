@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Document Analyzer — HCL GUVI BuildBridge 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #080810;
+    --surface:  #0f0f1c;
+    --card:     #12121f;
+    --border:   rgba(255,255,255,0.07);
+    --accent1:  #00d4ff;
+    --accent2:  #7b2fff;
+    --accent3:  #ff6b6b;
+    --pos:      #00ff88;
+    --neg:      #ff4444;
+    --neu:      #ffaa00;
+    --text:     #e0e0e0;
+    --muted:    #555;
+    --dim:      #333;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* ── Grid background ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    padding: 4rem 0 2.5rem;
+  }
+
+  .logo-badge {
+    display: inline-block;
+    padding: 4px 16px;
+    border: 1px solid rgba(0,212,255,0.3);
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent1);
+    margin-bottom: 1.2rem;
+    background: rgba(0,212,255,0.05);
+  }
+
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(2.2rem, 5vw, 3.8rem);
+    font-weight: 800;
+    line-height: 1.05;
+    background: linear-gradient(135deg, #fff 0%, var(--accent1) 50%, var(--accent2) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 1rem;
+  }
+
+  .hero-sub {
+    color: var(--muted);
+    font-size: 1rem;
+    max-width: 520px;
+    margin: 0 auto 2.5rem;
+  }
+
+  /* ── Feature pills ── */
+  .features {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 3rem;
+  }
+
+  .feature-pill {
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.03);
+    color: #888;
+    transition: all 0.2s;
+  }
+
+  .feature-pill:hover { border-color: var(--accent1); color: var(--accent1); }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    border: 2px dashed rgba(0,212,255,0.25);
+    border-radius: 20px;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: rgba(0,212,255,0.02);
+    margin-bottom: 1.5rem;
+    position: relative;
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: rgba(0,212,255,0.6);
+    background: rgba(0,212,255,0.05);
+  }
+
+  .upload-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+
+  .upload-icon { font-size: 3rem; margin-bottom: 1rem; }
+  .upload-title { font-family: 'Syne', sans-serif; font-size: 1.2rem; font-weight: 700; color: #fff; margin-bottom: 0.4rem; }
+  .upload-sub { color: var(--muted); font-size: 0.85rem; }
+
+  /* ── File preview ── */
+  .file-preview {
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .file-preview.show { display: flex; }
+
+  .file-icon { font-size: 2rem; flex-shrink: 0; }
+
+  .file-meta { flex: 1; }
+  .file-name { font-weight: 600; color: #fff; font-size: 0.95rem; }
+  .file-details { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+
+  .type-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .type-pdf   { background: rgba(255,100,100,0.12); color: #ff6464; border: 1px solid rgba(255,100,100,0.25); }
+  .type-docx  { background: rgba(100,150,255,0.12); color: #6496ff; border: 1px solid rgba(100,150,255,0.25); }
+  .type-image { background: rgba(150,100,255,0.12); color: #9664ff; border: 1px solid rgba(150,100,255,0.25); }
+
+  /* ── Analyze button ── */
+  .btn-analyze {
+    width: 100%;
+    padding: 1rem 2rem;
+    background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    border: none;
+    border-radius: 12px;
+    font-family: 'Syne', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 2rem;
+  }
+
+  .btn-analyze:hover { opacity: 0.88; }
+  .btn-analyze:active { transform: scale(0.99); }
+  .btn-analyze:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Progress ── */
+  .progress-container {
+    display: none;
+    margin-bottom: 2rem;
+  }
+
+  .progress-container.show { display: block; }
+
+  .progress-label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .progress-bar-track {
+    background: rgba(255,255,255,0.05);
+    border-radius: 6px;
+    height: 6px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent1), var(--accent2));
+    border-radius: 6px;
+    width: 0%;
+    transition: width 0.4s ease;
+  }
+
+  /* ── Results ── */
+  .results { display: none; }
+  .results.show { display: block; }
+
+  .results-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Metric cards ── */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 1.5rem;
+  }
+
+  @media (max-width: 600px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .metric-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.2rem;
+    text-align: center;
+  }
+
+  .metric-number {
+    font-family: 'Syne', sans-serif;
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--accent1);
+    line-height: 1;
+  }
+
+  .metric-label {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.4rem;
+    margin-bottom: 1rem;
+  }
+
+  .card-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    margin-bottom: 0.8rem;
+  }
+
+  .two-col { display: grid; grid-template-columns: 3fr 2fr; gap: 1rem; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+
+  @media (max-width: 700px) { .two-col, .three-col { grid-template-columns: 1fr; } }
+
+  /* ── Summary ── */
+  .summary-text {
+    font-size: 0.95rem;
+    color: #ddd;
+    line-height: 1.75;
+  }
+
+  .doc-type-label {
+    margin-top: 0.8rem;
+    font-size: 0.8rem;
+  }
+
+  .doc-type-value {
+    color: var(--accent2);
+    font-weight: 600;
+  }
+
+  /* ── Sentiment ── */
+  .sentiment-label {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin-bottom: 1rem;
+  }
+
+  .sentiment-bar-wrap { margin-bottom: 10px; }
+  .sentiment-bar-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+
+  .bar-track {
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    height: 6px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.8s ease;
+    width: 0;
+  }
+
+  /* ── Entities ── */
+  .entity-section { margin-bottom: 1rem; }
+  .entity-key {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .entity-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+
+  .entity-tag {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  /* ── Keyphrases ── */
+  .kp-pill {
+    display: inline-block;
+    padding: 4px 13px;
+    background: rgba(123,47,255,0.12);
+    border: 1px solid rgba(123,47,255,0.25);
+    border-radius: 20px;
+    font-size: 0.8rem;
+    color: #a880ff;
+    margin: 3px;
+  }
+
+  /* ── Readability ── */
+  .read-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .read-item { text-align: center; }
+  .read-val {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 800;
+  }
+
+  .read-key { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* ── JSON section ── */
+  .json-toggle {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--muted);
+    width: 100%;
+    text-align: left;
+    margin-bottom: 8px;
+    transition: background 0.2s;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .json-toggle:hover { background: rgba(255,255,255,0.06); }
+
+  .json-box {
+    background: #080808;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    font-size: 0.78rem;
+    color: #7ec8ff;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 350px;
+    overflow-y: auto;
+    display: none;
+    font-family: 'Courier New', monospace;
+  }
+
+  .json-box.show { display: block; }
+
+  /* ── Download button ── */
+  .btn-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.25);
+    border-radius: 10px;
+    color: var(--accent1);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    margin-top: 1rem;
+    transition: background 0.2s;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .btn-download:hover { background: rgba(0,212,255,0.15); }
+
+  /* ── Error ── */
+  .error-box {
+    background: rgba(255,68,68,0.08);
+    border: 1px solid rgba(255,68,68,0.25);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    color: #ff8888;
+    font-size: 0.9rem;
+    display: none;
+    margin-bottom: 1rem;
+  }
+
+  .error-box.show { display: block; }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 2rem 0;
+    border-top: 1px solid var(--border);
+    color: var(--dim);
+    font-size: 0.78rem;
+    margin-top: 3rem;
+  }
+
+  footer a { color: var(--accent2); text-decoration: none; }
+  footer a:hover { color: var(--accent1); }
+
+  /* ── Spinner ── */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  /* ── Pulse animation for upload icon ── */
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
+  .uploading .upload-icon { animation: pulse 1s infinite; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <header>
+    <div class="logo-badge">HCL GUVI BuildBridge Hackathon 2026</div>
+    <h1>AI Document<br>Analyzer</h1>
+    <p class="hero-sub">Upload any PDF, DOCX, or image — get instant AI-powered summary, entities, sentiment & more.</p>
+    <div class="features">
+      <span class="feature-pill">📄 PDF</span>
+      <span class="feature-pill">📝 DOCX</span>
+      <span class="feature-pill">🖼️ Images</span>
+      <span class="feature-pill">🤖 Groq Llama 3.3</span>
+      <span class="feature-pill">🏷️ NER</span>
+      <span class="feature-pill">😊 Sentiment</span>
+      <span class="feature-pill">📊 Readability</span>
+      <span class="feature-pill">🔑 Keyphrases</span>
+    </div>
+  </header>
+
+  <!-- Upload -->
+  <div class="upload-zone" id="uploadZone">
+    <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.webp">
+    <div class="upload-icon">☁️</div>
+    <div class="upload-title">Drop your document here</div>
+    <div class="upload-sub">or click to browse &nbsp;·&nbsp; PDF, DOCX, JPG, PNG, BMP, TIFF, WEBP</div>
+  </div>
+
+  <!-- File Preview -->
+  <div class="file-preview" id="filePreview">
+    <div class="file-icon" id="fileIcon">📄</div>
+    <div class="file-meta">
+      <div class="file-name" id="fileName">—</div>
+      <div class="file-details" id="fileDetails">—</div>
+    </div>
+    <div class="type-badge" id="typeBadge">—</div>
+  </div>
+
+  <!-- Config row -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.2rem;">
+    <div>
+      <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">API URL</label>
+      <input id="apiUrl" value="http://127.0.0.1:8000" style="
+        width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);
+        border-radius:8px;color:#fff;font-family:'DM Sans',sans-serif;font-size:0.85rem;
+        outline:none;transition:border 0.2s;
+      " onfocus="this.style.borderColor='var(--accent1)'"
+         onblur="this.style.borderColor='var(--border)'">
+    </div>
+    <div>
+      <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">API Key</label>
+      <input id="apiKey" value="sk_track2_987654321" type="password" style="
+        width:100%;padding:9px 12px;background:var(--card);border:1px solid var(--border);
+        border-radius:8px;color:#fff;font-family:'DM Sans',sans-serif;font-size:0.85rem;
+        outline:none;transition:border 0.2s;
+      " onfocus="this.style.borderColor='var(--accent1)'"
+         onblur="this.style.borderColor='var(--border)'">
+    </div>
+  </div>
+
+  <!-- Analyze Button -->
+  <button class="btn-analyze" id="analyzeBtn" onclick="analyzeDocument()" disabled>
+    🚀 Analyze Document
+  </button>
+
+  <!-- Error -->
+  <div class="error-box" id="errorBox"></div>
+
+  <!-- Progress -->
+  <div class="progress-container" id="progressContainer">
+    <div class="progress-label" id="progressLabel">Initializing...</div>
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="results" id="results">
+    <div class="results-title">📊 Analysis Results</div>
+
+    <!-- Metrics -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-number" id="mWords">—</div>
+        <div class="metric-label">Words</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-number" id="mSents">—</div>
+        <div class="metric-label">Sentences</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-number" id="mRead">—</div>
+        <div class="metric-label">Min Read</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-number" id="mTime">—</div>
+        <div class="metric-label">Process Time</div>
+      </div>
+    </div>
+
+    <!-- Summary + Sentiment -->
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">📝 AI Summary</div>
+        <div class="summary-text" id="summaryText">—</div>
+        <div class="doc-type-label">
+          Document type: <span class="doc-type-value" id="docType">—</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">😊 Sentiment Analysis</div>
+        <div class="sentiment-label" id="sentimentLabel">—</div>
+        <div class="sentiment-bar-wrap">
+          <div class="sentiment-bar-header"><span>Positive</span><span id="posScore">0%</span></div>
+          <div class="bar-track"><div class="bar-fill" id="posBar" style="background:var(--pos)"></div></div>
+        </div>
+        <div class="sentiment-bar-wrap">
+          <div class="sentiment-bar-header"><span>Neutral</span><span id="neuScore">0%</span></div>
+          <div class="bar-track"><div class="bar-fill" id="neuBar" style="background:var(--neu)"></div></div>
+        </div>
+        <div class="sentiment-bar-wrap">
+          <div class="sentiment-bar-header"><span>Negative</span><span id="negScore">0%</span></div>
+          <div class="bar-track"><div class="bar-fill" id="negBar" style="background:var(--neg)"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Entities -->
+    <div class="card">
+      <div class="card-title">🏷️ Named Entities</div>
+      <div id="entitiesContainer" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;"></div>
+    </div>
+
+    <!-- Keyphrases + Readability -->
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">🔑 Key Phrases</div>
+        <div id="keyphrases"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">📈 Readability Scores</div>
+        <div class="read-grid">
+          <div class="read-item">
+            <div class="read-val" style="color:var(--accent1)" id="rFlesch">—</div>
+            <div class="read-key">Flesch Ease</div>
+          </div>
+          <div class="read-item">
+            <div class="read-val" style="color:var(--accent2)" id="rFK">—</div>
+            <div class="read-key">FK Grade</div>
+          </div>
+          <div class="read-item">
+            <div class="read-val" style="color:var(--accent3)" id="rFog">—</div>
+            <div class="read-key">Gunning Fog</div>
+          </div>
+          <div class="read-item">
+            <div class="read-val" style="color:var(--neu);font-size:1rem;" id="rInterp">—</div>
+            <div class="read-key">Interpretation</div>
+          </div>
+        </div>
+        <div style="margin-top:0.8rem;font-size:0.78rem;color:var(--muted);">
+          Language: <b style="color:#ccc" id="rLang">—</b>
+          &nbsp;|&nbsp; Lexical diversity: <b style="color:#ccc" id="rLex">—</b>
+        </div>
+      </div>
+    </div>
+
+    <!-- JSON -->
+    <button class="json-toggle" onclick="toggleJson()">
+      🔧 View Raw JSON Response ▾
+    </button>
+    <pre class="json-box" id="jsonBox"></pre>
+
+    <a class="btn-download" id="downloadBtn" href="#" download="analysis.json">
+      ⬇️ Download Full JSON
+    </a>
+  </div>
+
+  <footer>
+    HCL GUVI BuildBridge Hackathon 2026 — Track 2: AI-Powered Document Analysis &nbsp;|&nbsp;
+    <a href="https://github.com/Chirag0071/AI-Document-Analysis" target="_blank">GitHub</a>
+    &nbsp;|&nbsp;
+    <a href="http://127.0.0.1:8000/docs" target="_blank">API Docs</a>
+  </footer>
+</div>
+
+<script>
+  const EXT_MAP = {
+    '.pdf':'pdf', '.docx':'docx', '.doc':'docx',
+    '.jpg':'image', '.jpeg':'image', '.png':'image',
+    '.bmp':'image', '.tiff':'image', '.tif':'image', '.webp':'image'
+  };
+
+  const ENTITY_CONFIG = {
+    names:         { label: '👤 Names',         bg:'rgba(0,212,255,0.1)',   fg:'#00d4ff' },
+    organizations: { label: '🏢 Organizations', bg:'rgba(123,47,255,0.1)',  fg:'#a880ff' },
+    dates:         { label: '📅 Dates',          bg:'rgba(0,255,136,0.1)',  fg:'#00ff88' },
+    locations:     { label: '📍 Locations',      bg:'rgba(255,170,0,0.1)',  fg:'#ffaa00' },
+    amounts:       { label: '💰 Amounts',        bg:'rgba(255,107,107,0.1)',fg:'#ff6b6b' },
+    percentages:   { label: '📊 Percentages',    bg:'rgba(255,130,130,0.1)',fg:'#ff8888' },
+    emails:        { label: '📧 Emails',         bg:'rgba(100,200,255,0.1)',fg:'#64c8ff' },
+    phones:        { label: '📞 Phones',         bg:'rgba(180,255,100,0.1)',fg:'#b4ff64' },
+    urls:          { label: '🔗 URLs',           bg:'rgba(200,150,255,0.1)',fg:'#c896ff' },
+  };
+
+  let currentFile = null;
+  let fullResult  = null;
+
+  // File input handler
+  document.getElementById('fileInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) handleFile(file);
+  });
+
+  // Drag & drop
+  const zone = document.getElementById('uploadZone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+
+  function handleFile(file) {
+    currentFile = file;
+    const ext  = '.' + file.name.split('.').pop().toLowerCase();
+    const type = EXT_MAP[ext] || 'unknown';
+
+    // Show preview
+    const icons = { pdf:'📕', docx:'📘', image:'🖼️', unknown:'❓' };
+    document.getElementById('fileIcon').textContent = icons[type] || '📄';
+    document.getElementById('fileName').textContent = file.name;
+    document.getElementById('fileDetails').textContent =
+      `${(file.size/1024).toFixed(1)} KB  ·  ${type.toUpperCase()}  ·  ${new Date().toLocaleTimeString()}`;
+
+    const badge = document.getElementById('typeBadge');
+    badge.textContent = type.toUpperCase();
+    badge.className = 'type-badge type-' + type;
+
+    document.getElementById('filePreview').classList.add('show');
+    document.getElementById('analyzeBtn').disabled = (type === 'unknown');
+    document.getElementById('analyzeBtn').textContent =
+      type === 'unknown' ? '❌ Unsupported file type' : '🚀 Analyze Document';
+
+    // Hide old results
+    document.getElementById('results').classList.remove('show');
+    document.getElementById('errorBox').classList.remove('show');
+  }
+
+  function setProgress(pct, label) {
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressLabel').textContent = label;
+  }
+
+  async function analyzeDocument() {
+    if (!currentFile) return;
+
+    const apiUrl = document.getElementById('apiUrl').value.trim();
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const ext    = '.' + currentFile.name.split('.').pop().toLowerCase();
+    const ftype  = EXT_MAP[ext];
+
+    // UI state
+    document.getElementById('analyzeBtn').disabled = true;
+    document.getElementById('analyzeBtn').innerHTML = '<div class="spinner"></div> Analyzing...';
+    document.getElementById('progressContainer').classList.add('show');
+    document.getElementById('results').classList.remove('show');
+    document.getElementById('errorBox').classList.remove('show');
+
+    // Progress steps
+    const steps = [
+      [10, '📥 Reading file...'],
+      [25, '🔍 Extracting text...'],
+      [45, '🧹 Preprocessing text...'],
+      [60, '🤖 Running Groq AI (summary + entities + sentiment)...'],
+      [75, '🏷️ Running spaCy NER...'],
+      [88, '📊 Classifying document type...'],
+      [95, '📈 Computing readability stats...'],
+    ];
+
+    for (const [pct, label] of steps) {
+      setProgress(pct, label);
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    try {
+      // Read file as base64
+      const b64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload  = () => res(reader.result.split(',')[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(currentFile);
+      });
+
+      // API call
+      const response = await fetch(`${apiUrl}/api/document-analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          fileName:   currentFile.name,
+          fileType:   ftype,
+          fileBase64: b64,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(`HTTP ${response.status}: ${err.detail || response.statusText}`);
+      }
+
+      const result = await response.json();
+      fullResult   = result;
+
+      setProgress(100, '✅ Analysis complete!');
+      await new Promise(r => setTimeout(r, 400));
+
+      renderResults(result);
+
+    } catch (err) {
+      const eb = document.getElementById('errorBox');
+      eb.textContent = `❌ ${err.message}`;
+      if (err.message.includes('fetch') || err.message.includes('Failed')) {
+        eb.textContent += '\n\nMake sure the API server is running: uvicorn main:app --reload';
+      }
+      eb.classList.add('show');
+    } finally {
+      document.getElementById('progressContainer').classList.remove('show');
+      document.getElementById('analyzeBtn').disabled = false;
+      document.getElementById('analyzeBtn').innerHTML = '🚀 Analyze Document';
+    }
+  }
+
+  function renderResults(r) {
+    const stats = r.document_stats || {};
+    const read  = stats.readability || {};
+
+    // Metrics
+    document.getElementById('mWords').textContent = stats.word_count || '—';
+    document.getElementById('mSents').textContent = stats.sentence_count || '—';
+    document.getElementById('mRead').textContent  = (stats.reading_time_minutes || '—') + ' min';
+    document.getElementById('mTime').textContent  = (r.processing_time_seconds || '—') + 's';
+
+    // Summary
+    document.getElementById('summaryText').textContent = r.summary || 'No summary available.';
+    document.getElementById('docType').textContent     = r.document_type || 'Unknown';
+
+    // Sentiment
+    const s = r.sentiment || 'Neutral';
+    const colors = { Positive:'var(--pos)', Negative:'var(--neg)', Neutral:'var(--neu)' };
+    const sl = document.getElementById('sentimentLabel');
+    sl.textContent = s;
+    sl.style.color = colors[s] || '#fff';
+
+    const sc = r.sentiment_scores || {};
+    const pos = Math.round((sc.Positive || 0) * 100);
+    const neu = Math.round((sc.Neutral  || 0) * 100);
+    const neg = Math.round((sc.Negative || 0) * 100);
+
+    document.getElementById('posScore').textContent = pos + '%';
+    document.getElementById('neuScore').textContent = neu + '%';
+    document.getElementById('negScore').textContent = neg + '%';
+
+    setTimeout(() => {
+      document.getElementById('posBar').style.width = pos + '%';
+      document.getElementById('neuBar').style.width = neu + '%';
+      document.getElementById('negBar').style.width = neg + '%';
+    }, 100);
+
+    // Entities
+    const ec    = document.getElementById('entitiesContainer');
+    ec.innerHTML = '';
+    const ents  = r.entities || {};
+    let hasAny  = false;
+
+    for (const [key, cfg] of Object.entries(ENTITY_CONFIG)) {
+      const vals = ents[key] || [];
+      if (!vals.length) continue;
+      hasAny = true;
+      const div = document.createElement('div');
+      div.className = 'entity-section';
+      div.innerHTML = `
+        <div class="entity-key">${cfg.label}</div>
+        <div class="entity-tags">${vals.map(v =>
+          `<span class="entity-tag" style="background:${cfg.bg};color:${cfg.fg};border:1px solid ${cfg.fg}33">${v}</span>`
+        ).join('')}</div>
+      `;
+      ec.appendChild(div);
+    }
+
+    if (!hasAny) {
+      ec.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">No entities detected.</div>';
+    }
+
+    // Keyphrases
+    const kp  = r.key_phrases || [];
+    document.getElementById('keyphrases').innerHTML = kp.length
+      ? kp.map(k => `<span class="kp-pill">${k}</span>`).join('')
+      : '<span style="color:var(--muted);font-size:0.85rem;">None detected.</span>';
+
+    // Readability
+    document.getElementById('rFlesch').textContent = read.flesch_reading_ease  || '—';
+    document.getElementById('rFK').textContent     = read.flesch_kincaid_grade || '—';
+    document.getElementById('rFog').textContent    = read.gunning_fog_index    || '—';
+    document.getElementById('rInterp').textContent = read.interpretation        || '—';
+    document.getElementById('rLang').textContent   = (stats.language || 'en').toUpperCase();
+    document.getElementById('rLex').textContent    = (stats.lexical_diversity  || 0).toFixed(3);
+
+    // JSON
+    const jsonStr = JSON.stringify(r, null, 2);
+    document.getElementById('jsonBox').textContent = jsonStr;
+
+    // Download
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const dl   = document.getElementById('downloadBtn');
+    dl.href     = url;
+    dl.download = currentFile.name.replace(/\.[^.]+$/, '') + '_analysis.json';
+
+    // Show
+    document.getElementById('results').classList.add('show');
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function toggleJson() {
+    document.getElementById('jsonBox').classList.toggle('show');
+  }
+</script>
+</body>
+</html>
