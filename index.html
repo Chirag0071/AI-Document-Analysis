@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<<<<<<< HEAD
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chirag</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -221,11 +222,370 @@ footer{border-top:1px solid var(--rule);padding:22px 48px;background:var(--bg);d
   .fg-row{grid-template-columns:1fr}
   footer{flex-direction:column;gap:10px;text-align:center}
   .nav a.hs{display:none}
+=======
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>DocSense AI — Document Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@300;400;500;600;700;800&family=Lora:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#000005;
+  --s1:#04050e;
+  --card:#07091a;
+  --border:rgba(180,100,255,0.12);
+  --a1:#b847ff;
+  --a2:#ff4dca;
+  --a3:#00ffc2;
+  --a4:#ff8c42;
+  --a5:#ff3d5a;
+  --gold:#e8c84a;
+  --text:#d4ceff;
+  --muted:#4a4570;
+  --dim:#0e0f20;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);font-family:'Bricolage Grotesque',sans-serif;color:var(--text);min-height:100vh;overflow-x:hidden}
+
+/* ── FLOATING DOCS BACKGROUND ── */
+.doc-bg{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+.doc-bg::before{
+  content:'';position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 30%,rgba(184,71,255,0.06) 0%,transparent 65%),
+    radial-gradient(ellipse 50% 60% at 80% 70%,rgba(255,77,202,0.05) 0%,transparent 65%),
+    radial-gradient(ellipse 40% 40% at 50% 10%,rgba(0,255,194,0.03) 0%,transparent 60%);
+  z-index:1;
+}
+.fdoc{
+  position:absolute;
+  border-radius:4px;
+  animation:floatUp linear infinite;
+  background:rgba(255,255,255,0.018);
+}
+@keyframes floatUp{
+  0%{transform:translateY(110vh) rotate(var(--rot));opacity:0}
+  5%{opacity:1}
+  90%{opacity:0.7}
+  100%{transform:translateY(-15vh) rotate(calc(var(--rot) + 10deg));opacity:0}
+}
+.fdoc-inner{
+  position:relative;width:100%;height:100%;
+  border:1px solid rgba(255,255,255,0.06);
+  border-radius:4px;overflow:hidden;
+}
+.fdoc-inner::before{
+  content:'';position:absolute;
+  top:0;left:0;right:0;height:3px;
+  border-radius:4px 4px 0 0;
+}
+.fdoc-line{
+  position:absolute;left:12px;right:12px;height:1.5px;border-radius:1px;
+}
+.doc-bg-overlay{position:absolute;inset:0;z-index:2;background:linear-gradient(to bottom,rgba(0,0,5,0.3) 0%,rgba(0,0,5,0.15) 50%,rgba(0,0,5,0.6) 100%)}
+
+/* ── LAYOUT ── */
+.wrap{position:relative;z-index:10;max-width:1080px;margin:0 auto;padding:0 28px 120px}
+
+/* ── NAV ── */
+nav{
+  position:sticky;top:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 40px;
+  background:rgba(0,0,5,0.75);
+  backdrop-filter:blur(24px);
+  border-bottom:1px solid rgba(184,71,255,0.1);
+}
+.nav-logo{
+  font-family:'Lora',serif;font-size:1.3rem;font-weight:600;
+  color:#fff;display:flex;align-items:center;gap:10px;
+}
+.logo-gem{
+  width:28px;height:28px;position:relative;
+}
+.logo-gem svg{width:100%;height:100%}
+.nav-links{display:flex;gap:4px}
+.nav-link{
+  padding:6px 14px;border-radius:20px;font-size:12px;font-weight:500;
+  color:var(--muted);text-decoration:none;cursor:pointer;
+  background:none;border:none;font-family:'Bricolage Grotesque',sans-serif;
+  transition:all 0.2s;
+}
+.nav-link:hover{color:var(--a1);background:rgba(184,71,255,0.08)}
+.nav-status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
+.sdot{width:7px;height:7px;border-radius:50%;background:#ef4444;animation:bk 2s infinite;transition:background 0.3s}
+.sdot.live{background:var(--a3)}
+@keyframes bk{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* ── HERO ── */
+.hero{text-align:center;padding:84px 20px 56px}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 18px;margin-bottom:28px;
+  border:1px solid rgba(184,71,255,0.25);border-radius:30px;
+  background:rgba(184,71,255,0.07);
+  font-size:11px;color:var(--a1);font-weight:600;letter-spacing:0.08em;
+}
+.badge-dot{width:7px;height:7px;border-radius:50%;background:var(--a1);animation:bk 1.8s infinite}
+h1{
+  font-family:'Lora',serif;
+  font-size:clamp(2.8rem,6vw,5.2rem);
+  font-weight:600;color:#fff;line-height:1.06;
+  letter-spacing:-0.025em;margin-bottom:20px;
+}
+h1 em{
+  font-style:italic;
+  background:linear-gradient(120deg,var(--a1),var(--a2),var(--a1));
+  background-size:200%;
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:shimmer 4s linear infinite;
+}
+@keyframes shimmer{0%{background-position:0%}100%{background-position:200%}}
+.hero-desc{font-size:1rem;color:var(--muted);max-width:500px;margin:0 auto 40px;line-height:1.75;font-weight:300}
+.tech-row{display:flex;flex-wrap:wrap;gap:7px;justify-content:center}
+.tech{
+  padding:5px 12px;border-radius:8px;font-size:11px;font-weight:500;
+  border:1px solid rgba(255,255,255,0.07);
+  background:rgba(255,255,255,0.025);
+  color:rgba(255,255,255,0.38);
+  transition:all 0.2s;cursor:default;
+}
+.tech:hover{border-color:rgba(184,71,255,0.35);color:var(--a1);background:rgba(184,71,255,0.06)}
+
+/* ── UPLOAD CARD ── */
+.upload-card{
+  margin:52px 0 16px;
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:28px;overflow:hidden;
+  position:relative;
+}
+.upload-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent 0%,var(--a1) 40%,var(--a2) 60%,transparent 100%);
+}
+.upload-split{display:grid;grid-template-columns:55% 45%}
+.ul-left{padding:44px 40px;border-right:1px solid var(--border)}
+.ul-title{
+  font-family:'Lora',serif;font-size:1.8rem;font-weight:600;
+  color:#fff;line-height:1.2;margin-bottom:12px;
+}
+.ul-desc{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:24px;max-width:380px}
+.fmts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:28px}
+.fmt{padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.fr{background:rgba(255,61,90,0.1);color:#ff8fa0;border:1px solid rgba(255,61,90,0.2)}
+.fb{background:rgba(184,71,255,0.1);color:#d4a0ff;border:1px solid rgba(184,71,255,0.2)}
+.fg{background:rgba(0,255,194,0.08);color:#80ffe3;border:1px solid rgba(0,255,194,0.15)}
+.cfg-g{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cfg-lbl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.cfg-inp{
+  width:100%;padding:10px 13px;
+  background:rgba(255,255,255,0.035);
+  border:1px solid rgba(255,255,255,0.08);border-radius:9px;
+  color:#fff;font-family:'Bricolage Grotesque',sans-serif;font-size:13px;
+  outline:none;transition:border-color 0.2s;
+}
+.cfg-inp:focus{border-color:rgba(184,71,255,0.45)}
+.ul-note{
+  margin-top:14px;font-size:11px;color:var(--muted);
+  display:flex;align-items:center;gap:6px;
+}
+.ul-note-icon{color:var(--gold);font-size:12px}
+
+/* Drop area */
+.ul-right{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:44px 32px;cursor:pointer;position:relative;
+  transition:background 0.3s;min-height:360px;
+}
+.ul-right:hover{background:rgba(184,71,255,0.03)}
+.ul-right.drag-on{background:rgba(184,71,255,0.07);border-left-color:rgba(184,71,255,0.4)}
+.ul-right input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+
+/* Animated document icon */
+.doc-icon-wrap{position:relative;width:120px;height:140px;margin:0 auto 28px}
+.di-shadow{
+  position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);
+  width:80px;height:8px;background:rgba(184,71,255,0.15);
+  border-radius:50%;filter:blur(4px);
+}
+.di-doc{
+  position:absolute;inset:0;
+  background:linear-gradient(160deg,rgba(184,71,255,0.12),rgba(255,77,202,0.06));
+  border:1px solid rgba(184,71,255,0.3);border-radius:8px;
+  display:flex;flex-direction:column;padding:14px 12px;gap:6px;
+  animation:docFloat 3s ease-in-out infinite;
+}
+@keyframes docFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.di-corner{
+  position:absolute;top:0;right:0;
+  width:22px;height:22px;
+  background:linear-gradient(225deg,rgba(184,71,255,0.4),rgba(255,77,202,0.2));
+  border-radius:0 8px 0 8px;
+}
+.di-line{height:2px;background:rgba(255,255,255,0.12);border-radius:1px}
+.di-line.short{width:65%}
+.di-line.accent{background:linear-gradient(90deg,var(--a1),var(--a2));opacity:0.6}
+.di-dot-row{display:flex;gap:4px;margin-top:4px}
+.di-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.1)}
+.di-dot.c1{background:rgba(184,71,255,0.5)}
+.di-dot.c2{background:rgba(0,255,194,0.4)}
+
+.up-arrow{
+  width:40px;height:40px;border-radius:50%;
+  background:rgba(184,71,255,0.12);border:1px solid rgba(184,71,255,0.25);
+  display:flex;align-items:center;justify-content:center;
+  margin:0 auto 14px;
+  animation:pulse-ring 2s ease-in-out infinite;
+}
+@keyframes pulse-ring{0%,100%{box-shadow:0 0 0 0 rgba(184,71,255,0.3)}50%{box-shadow:0 0 0 10px rgba(184,71,255,0)}}
+.up-title{font-size:15px;font-weight:600;color:#fff;margin-bottom:6px;text-align:center}
+.up-sub{font-size:12px;color:var(--muted);text-align:center;line-height:1.6}
+
+/* File bar */
+.file-bar{
+  display:none;background:rgba(184,71,255,0.06);
+  border:1px solid rgba(184,71,255,0.2);border-radius:14px;
+  padding:13px 18px;margin-bottom:13px;align-items:center;gap:14px;
+}
+.file-bar.show{display:flex}
+.fb-ico{width:40px;height:40px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.fb-info{flex:1}
+.fb-name{font-size:13px;font-weight:600;color:#fff;margin-bottom:2px;word-break:break-all}
+.fb-meta{font-size:11px;color:var(--muted)}
+.fb-chip{padding:3px 11px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;flex-shrink:0}
+.fc-pdf{background:rgba(255,61,90,.12);color:#ff8fa0;border:1px solid rgba(255,61,90,.25)}
+.fc-docx{background:rgba(184,71,255,.12);color:#d4a0ff;border:1px solid rgba(184,71,255,.25)}
+.fc-image{background:rgba(0,255,194,.08);color:#80ffe3;border:1px solid rgba(0,255,194,.15)}
+
+/* CTA */
+.btn-cta{
+  width:100%;padding:16px;
+  background:linear-gradient(135deg,var(--a1),var(--a2));
+  border:none;border-radius:12px;
+  font-family:'Bricolage Grotesque',sans-serif;
+  font-size:15px;font-weight:700;color:#fff;
+  cursor:pointer;margin-bottom:16px;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  position:relative;overflow:hidden;
+  transition:opacity 0.2s,transform 0.1s;
+}
+.btn-cta::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.12),transparent)}
+.btn-cta:hover:not(:disabled){opacity:0.88;transform:translateY(-1px)}
+.btn-cta:active:not(:disabled){transform:translateY(0)}
+.btn-cta:disabled{opacity:0.2;cursor:not-allowed}
+
+/* Error */
+.err{display:none;background:rgba(255,61,90,.07);border:1px solid rgba(255,61,90,.22);border-radius:12px;padding:13px 17px;color:#ff8fa0;font-size:13px;line-height:1.6;margin-bottom:14px;white-space:pre-wrap}
+.err.show{display:block}
+
+/* Progress */
+.prog{display:none;margin-bottom:16px}
+.prog.show{display:block}
+.prog-top{display:flex;justify-content:space-between;margin-bottom:8px}
+.prog-lbl{font-size:12px;color:var(--muted)}
+.prog-pct{font-size:12px;font-weight:700;color:var(--a1)}
+.prog-track{height:3px;background:rgba(255,255,255,0.05);border-radius:2px;overflow:hidden;margin-bottom:10px}
+.prog-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--a1),var(--a2));width:0%;transition:width 0.5s ease}
+.psteps{display:flex;gap:4px;flex-wrap:wrap}
+.ps{padding:3px 10px;border-radius:20px;font-size:10px;background:rgba(255,255,255,.03);color:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.06);transition:all 0.3s}
+.ps.on{background:rgba(184,71,255,.12);color:var(--a1);border-color:rgba(184,71,255,.25)}
+.ps.ok{background:rgba(0,255,194,.08);color:var(--a3);border-color:rgba(0,255,194,.2)}
+
+/* ── RESULTS ── */
+.results{display:none}
+.results.show{display:block;animation:fu 0.45s ease}
+@keyframes fu{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+.res-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:26px;padding-bottom:18px;border-bottom:1px solid var(--border)}
+.res-ttl{font-family:'Lora',serif;font-size:1.9rem;font-weight:600;color:#fff;letter-spacing:-.02em}
+.res-ok{padding:5px 14px;background:rgba(0,255,194,.09);border:1px solid rgba(0,255,194,.22);border-radius:20px;font-size:10px;font-weight:700;color:var(--a3);text-transform:uppercase;letter-spacing:.1em}
+
+/* Metrics */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:16px}
+.mc{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:16px;padding:20px 14px;text-align:center;
+  position:relative;overflow:hidden;
+  transition:border-color 0.2s,transform 0.2s;cursor:default;
+}
+.mc:hover{border-color:rgba(184,71,255,0.3);transform:translateY(-3px)}
+.mc-top{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--a1),var(--a2))}
+.mc-n{font-family:'Lora',serif;font-size:2.1rem;font-weight:600;color:#fff;line-height:1;margin-bottom:6px}
+.mc-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:24px;margin-bottom:13px;transition:border-color 0.2s}
+.card:hover{border-color:rgba(184,71,255,0.2)}
+.chdr{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.cico{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cttl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.13em;color:rgba(255,255,255,.4)}
+.cline{flex:1;height:1px;background:var(--border)}
+.g2{display:grid;grid-template-columns:3fr 2fr;gap:13px;margin-bottom:13px}
+.g22{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-bottom:13px}
+
+/* Summary */
+.sum-txt{font-size:14px;color:rgba(255,255,255,.76);line-height:1.85;font-weight:300}
+.dtype-row{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.dtype-l{font-size:11px;color:var(--muted)}
+.dtype-v{padding:4px 12px;background:rgba(232,200,74,.08);border:1px solid rgba(232,200,74,.2);border-radius:20px;font-size:11px;font-weight:600;color:var(--gold)}
+
+/* Sentiment */
+.sent-big{font-family:'Lora',serif;font-size:2.4rem;font-weight:600;margin-bottom:18px;line-height:1}
+.s-pos{color:var(--a3)}.s-neg{color:var(--a5)}.s-neu{color:var(--a4)}
+.sbar{margin-bottom:10px}
+.sbar-top{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px}
+.sbar-t{height:5px;background:rgba(255,255,255,.05);border-radius:3px;overflow:hidden}
+.sbar-f{height:100%;border-radius:3px;width:0;transition:width 1.1s cubic-bezier(.4,0,.2,1)}
+
+/* Entities */
+.ent-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.eg-ttl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:6px}
+.eg-tags{display:flex;flex-wrap:wrap;gap:4px}
+.etag{padding:3px 9px;border-radius:6px;font-size:12px;font-weight:500}
+
+/* Keyphrases */
+.kp-row{display:flex;flex-wrap:wrap;gap:7px}
+.kp{padding:6px 14px;background:rgba(184,71,255,.08);border:1px solid rgba(184,71,255,.18);border-radius:8px;font-size:12px;color:#d4a0ff;transition:background .2s;cursor:default}
+.kp:hover{background:rgba(184,71,255,.16)}
+
+/* Readability */
+.rg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ri{background:rgba(255,255,255,.03);border-radius:10px;padding:13px}
+.rv{font-family:'Lora',serif;font-size:1.7rem;font-weight:600;line-height:1;margin-bottom:3px}
+.rk{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
+.rex{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);display:flex;gap:18px}
+.rex b{color:rgba(255,255,255,.6)}
+
+/* JSON */
+.jbtn{width:100%;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:11px 16px;color:var(--muted);font-family:'Bricolage Grotesque',sans-serif;font-size:13px;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;transition:background .2s}
+.jbtn:hover{background:rgba(255,255,255,.05)}
+.jpre{display:none;background:#01010a;border:1px solid var(--border);border-radius:10px;padding:16px;font-family:'Courier New',monospace;font-size:12px;color:#a78bfa;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow-y:auto;margin-bottom:10px}
+.jpre.show{display:block}
+.dl-btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:rgba(0,255,194,.07);border:1px solid rgba(0,255,194,.18);border-radius:10px;color:var(--a3);font-size:13px;font-weight:600;text-decoration:none;cursor:pointer;transition:background .2s;font-family:'Bricolage Grotesque',sans-serif}
+.dl-btn:hover{background:rgba(0,255,194,.14)}
+
+/* Footer */
+footer{text-align:center;padding:28px;margin-top:40px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+footer a{color:rgba(184,71,255,.7);text-decoration:none}
+footer a:hover{color:var(--a1)}
+
+/* Spinner */
+@keyframes sp{to{transform:rotate(360deg)}}
+.spin{width:17px;height:17px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;flex-shrink:0}
+
+@media(max-width:720px){
+  .upload-split{grid-template-columns:1fr}
+  .ul-left{border-right:none;border-bottom:1px solid var(--border)}
+  .g2,.g22,.metrics{grid-template-columns:1fr}
+  nav{padding:14px 20px}
+  .nav-links{display:none}
+  h1{font-size:2.5rem}
+>>>>>>> c8f492a (Complete frontend redesign - Space Grotesk + dark navy theme)
 }
 </style>
 </head>
 <body>
 
+<<<<<<< HEAD
 <!-- NAV -->
 <nav class="nav">
   <a href="#about" class="hs on">About</a>
@@ -550,6 +910,464 @@ function sendMsg(e) {
     b.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Send message';
     b.style.background = ''; b.disabled = false; e.target.reset();
   }, 3000);
+=======
+<!-- FLOATING DOCUMENTS BACKGROUND -->
+<div class="doc-bg" id="docbg">
+  <div class="doc-bg-overlay"></div>
+</div>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">
+    <div class="logo-gem">
+      <svg viewBox="0 0 28 28" fill="none">
+        <path d="M14 2 L24 9 L24 19 L14 26 L4 19 L4 9 Z" fill="rgba(184,71,255,0.15)" stroke="rgba(184,71,255,0.5)" stroke-width="1"/>
+        <path d="M14 6 L20 10.5 L20 17.5 L14 22 L8 17.5 L8 10.5 Z" fill="rgba(255,77,202,0.2)" stroke="rgba(255,77,202,0.4)" stroke-width="0.5"/>
+        <circle cx="14" cy="14" r="3" fill="rgba(184,71,255,0.6)"/>
+      </svg>
+    </div>
+    DocSense AI
+  </div>
+  <div class="nav-links">
+    <a class="nav-link" href="http://127.0.0.1:8000/docs" target="_blank">API Docs</a>
+    <a class="nav-link" href="https://github.com/Chirag0071/AI-Document-Analysis" target="_blank">GitHub</a>
+  </div>
+  <div class="nav-status">
+    <div class="sdot" id="sdot"></div>
+    <span id="stxt">Checking API...</span>
+  </div>
+</nav>
+
+<div class="wrap">
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-badge">
+    <div class="badge-dot"></div>
+    HCL GUVI BuildBridge Hackathon 2026 &mdash; Track 2
+  </div>
+  <h1>Transform any document<br>into <em>intelligence</em></h1>
+  <p class="hero-desc">Upload PDF, DOCX, or image up to 150 MB. The AI pipeline extracts summaries, named entities, sentiment, keyphrases and readability metrics instantly.</p>
+  <div class="tech-row">
+    <span class="tech">Groq Llama 3.3 70B</span>
+    <span class="tech">spaCy en_core_web_lg</span>
+    <span class="tech">FinBERT Sentiment</span>
+    <span class="tech">Random Forest</span>
+    <span class="tech">VADER + TextBlob</span>
+    <span class="tech">YAKE Keyphrases</span>
+    <span class="tech">Tesseract OCR</span>
+    <span class="tech">Decision Tree Ensemble</span>
+  </div>
+</div>
+
+<!-- UPLOAD CARD -->
+<div class="upload-card">
+  <div class="upload-split">
+    <div class="ul-left">
+      <div class="ul-title">Drop your<br>document here</div>
+      <p class="ul-desc">Auto-detects PDF, DOCX and image formats. Scanned documents are processed via OCR. Max file size 150 MB.</p>
+      <div class="fmts">
+        <span class="fmt fr">PDF</span>
+        <span class="fmt fb">DOCX</span>
+        <span class="fmt fb">DOC</span>
+        <span class="fmt fg">JPG</span>
+        <span class="fmt fg">PNG</span>
+        <span class="fmt fg">BMP</span>
+        <span class="fmt fg">TIFF</span>
+        <span class="fmt fg">WEBP</span>
+      </div>
+      <div class="cfg-g">
+        <div>
+          <div class="cfg-lbl">API URL</div>
+          <input class="cfg-inp" id="apiUrl" value="http://127.0.0.1:8000">
+        </div>
+        <div>
+          <div class="cfg-lbl">API Key</div>
+          <input class="cfg-inp" id="apiKey" value="sk_track2_987654321" type="password">
+        </div>
+      </div>
+      <div class="ul-note">
+        <span class="ul-note-icon">&#9888;</span>
+        API URL and key are required. Keep them as default for local server.
+      </div>
+    </div>
+    <div class="ul-right" id="dropzone">
+      <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.webp">
+      <div class="doc-icon-wrap">
+        <div class="di-shadow"></div>
+        <div class="di-doc">
+          <div class="di-corner"></div>
+          <div class="di-line accent"></div>
+          <div class="di-line"></div>
+          <div class="di-line short"></div>
+          <div class="di-line"></div>
+          <div class="di-line short" style="width:75%"></div>
+          <div class="di-line"></div>
+          <div class="di-dot-row">
+            <div class="di-dot c1"></div>
+            <div class="di-dot c2"></div>
+            <div class="di-dot"></div>
+          </div>
+        </div>
+      </div>
+      <div class="up-arrow">
+        <svg width="18" height="18" fill="none" stroke="var(--a1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+          <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+        </svg>
+      </div>
+      <div class="up-title">Click or drag a file</div>
+      <div class="up-sub">Max 150 MB &bull; Format auto-detected</div>
+    </div>
+  </div>
+</div>
+
+<!-- File bar -->
+<div class="file-bar" id="filebar">
+  <div class="fb-ico" id="fbico"></div>
+  <div class="fb-info">
+    <div class="fb-name" id="fbname">-</div>
+    <div class="fb-meta" id="fbmeta">-</div>
+  </div>
+  <div class="fb-chip" id="fbchip">-</div>
+</div>
+
+<!-- Analyze -->
+<button class="btn-cta" id="abtn" onclick="run()" disabled>
+  <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  Analyze Document
+</button>
+
+<!-- Error -->
+<div class="err" id="err"></div>
+
+<!-- Progress -->
+<div class="prog" id="prog">
+  <div class="prog-top">
+    <span class="prog-lbl" id="plbl">Starting...</span>
+    <span class="prog-pct" id="ppct">0%</span>
+  </div>
+  <div class="prog-track"><div class="prog-fill" id="pfill"></div></div>
+  <div class="psteps" id="psteps"></div>
+</div>
+
+<!-- RESULTS -->
+<div class="results" id="results">
+  <div class="res-hd">
+    <div class="res-ttl">Analysis Results</div>
+    <div class="res-ok">&#10003; Complete</div>
+  </div>
+  <div class="metrics">
+    <div class="mc"><div class="mc-top"></div><div class="mc-n" id="mw">-</div><div class="mc-l">Words</div></div>
+    <div class="mc"><div class="mc-top"></div><div class="mc-n" id="ms">-</div><div class="mc-l">Sentences</div></div>
+    <div class="mc"><div class="mc-top"></div><div class="mc-n" id="mr">-</div><div class="mc-l">Min read</div></div>
+    <div class="mc"><div class="mc-top"></div><div class="mc-n" id="mt">-</div><div class="mc-l">Process time</div></div>
+  </div>
+  <div class="g2">
+    <div class="card">
+      <div class="chdr">
+        <div class="cico" style="background:rgba(184,71,255,.1)">
+          <svg width="15" height="15" fill="none" stroke="var(--a1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <div class="cttl">AI Summary</div><div class="cline"></div>
+      </div>
+      <div class="sum-txt" id="sumtxt">-</div>
+      <div class="dtype-row"><span class="dtype-l">Classified as</span><span class="dtype-v" id="dtype">-</span></div>
+    </div>
+    <div class="card">
+      <div class="chdr">
+        <div class="cico" style="background:rgba(0,255,194,.08)">
+          <svg width="15" height="15" fill="none" stroke="var(--a3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        </div>
+        <div class="cttl">Sentiment</div><div class="cline"></div>
+      </div>
+      <div class="sent-big" id="slbl">-</div>
+      <div class="sbar"><div class="sbar-top"><span>Positive</span><span id="spv">0%</span></div><div class="sbar-t"><div class="sbar-f" id="spb" style="background:var(--a3)"></div></div></div>
+      <div class="sbar"><div class="sbar-top"><span>Neutral</span><span id="snv">0%</span></div><div class="sbar-t"><div class="sbar-f" id="snb" style="background:var(--a4)"></div></div></div>
+      <div class="sbar"><div class="sbar-top"><span>Negative</span><span id="sngv">0%</span></div><div class="sbar-t"><div class="sbar-f" id="sngb" style="background:var(--a5)"></div></div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="chdr">
+      <div class="cico" style="background:rgba(255,77,202,.1)">
+        <svg width="15" height="15" fill="none" stroke="var(--a2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      </div>
+      <div class="cttl">Named Entities</div><div class="cline"></div>
+    </div>
+    <div class="ent-g" id="entg"></div>
+  </div>
+  <div class="g22">
+    <div class="card">
+      <div class="chdr">
+        <div class="cico" style="background:rgba(184,71,255,.1)">
+          <svg width="15" height="15" fill="none" stroke="var(--a1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <div class="cttl">Key Phrases</div><div class="cline"></div>
+      </div>
+      <div class="kp-row" id="kprow"></div>
+    </div>
+    <div class="card">
+      <div class="chdr">
+        <div class="cico" style="background:rgba(232,200,74,.08)">
+          <svg width="15" height="15" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </div>
+        <div class="cttl">Readability</div><div class="cline"></div>
+      </div>
+      <div class="rg">
+        <div class="ri"><div class="rv" style="color:var(--a1)" id="rflesch">-</div><div class="rk">Flesch Ease</div></div>
+        <div class="ri"><div class="rv" style="color:var(--a2)" id="rfk">-</div><div class="rk">FK Grade</div></div>
+        <div class="ri"><div class="rv" style="color:var(--a5)" id="rfog">-</div><div class="rk">Gunning Fog</div></div>
+        <div class="ri"><div class="rv" style="color:var(--a3);font-size:1.1rem" id="rinterp">-</div><div class="rk">Interpretation</div></div>
+      </div>
+      <div class="rex"><span>Language: <b id="rlang">-</b></span><span>Lex diversity: <b id="rlex">-</b></span></div>
+    </div>
+  </div>
+  <button class="jbtn" onclick="toggleJ()"><span>View raw JSON response</span><span id="jarr">&#9662;</span></button>
+  <pre class="jpre" id="jpre"></pre>
+  <a class="dl-btn" id="dlbtn" href="#" download="analysis.json">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Download full JSON
+  </a>
+</div>
+
+</div>
+
+<footer>
+  HCL GUVI BuildBridge Hackathon 2026 &mdash; Track 2: AI-Powered Document Analysis &nbsp;&bull;&nbsp;
+  <a href="https://github.com/Chirag0071/AI-Document-Analysis" target="_blank">GitHub</a> &nbsp;&bull;&nbsp;
+  <a href="http://127.0.0.1:8000/docs" target="_blank">API Docs</a>
+</footer>
+
+<script>
+/* ======================================================
+   FLOATING DOCUMENTS BACKGROUND
+   Creates SVG document shapes that drift upward
+====================================================== */
+(function(){
+  const bg = document.getElementById('docbg');
+  const W = window.innerWidth, H = window.innerHeight;
+
+  const palettes = [
+    { border:'rgba(184,71,255,0.18)', line:'rgba(184,71,255,0.25)', top:'rgba(184,71,255,0.4)', bg:'rgba(184,71,255,0.04)' },
+    { border:'rgba(255,77,202,0.15)', line:'rgba(255,77,202,0.2)',  top:'rgba(255,77,202,0.35)',bg:'rgba(255,77,202,0.03)' },
+    { border:'rgba(0,255,194,0.1)',   line:'rgba(0,255,194,0.15)', top:'rgba(0,255,194,0.3)',  bg:'rgba(0,255,194,0.02)'  },
+    { border:'rgba(255,140,66,0.12)', line:'rgba(255,140,66,0.18)',top:'rgba(255,140,66,0.3)', bg:'rgba(255,140,66,0.025)'},
+    { border:'rgba(255,255,255,0.06)',line:'rgba(255,255,255,0.08)',top:'rgba(255,255,255,0.15)',bg:'rgba(255,255,255,0.015)'},
+  ];
+
+  function makeSVGDoc(w, h, pal) {
+    const lineCount = Math.floor(h / 14);
+    let lines = '';
+    for (let i = 0; i < lineCount; i++) {
+      const y = 28 + i * 14;
+      const w2 = 70 + Math.random() * 25;
+      const isAccent = i === 0;
+      lines += `<line x1="10" y1="${y}" x2="${w2}%" y2="${y}" stroke="${isAccent ? pal.top : pal.line}" stroke-width="${isAccent ? 1.5 : 0.8}" stroke-linecap="round"/>`;
+    }
+    return `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+        <rect width="${w}" height="${h}" rx="5" fill="${pal.bg}" stroke="${pal.border}" stroke-width="1"/>
+        <rect x="${w-18}" y="0" width="18" height="18" rx="0" fill="${pal.top}" opacity="0.3"/>
+        <path d="M${w-18} 0 L${w} 18 L${w-18} 18 Z" fill="${pal.bg}"/>
+        ${lines}
+      </svg>`;
+  }
+
+  function createDoc() {
+    const pal = palettes[Math.floor(Math.random() * palettes.length)];
+    const docW = 70 + Math.random() * 80;
+    const docH = docW * (1.2 + Math.random() * 0.4);
+    const rot = (Math.random() - 0.5) * 24;
+    const duration = 20 + Math.random() * 25;
+    const delay = -Math.random() * duration;
+    const left = Math.random() * 100;
+    const opacity = 0.25 + Math.random() * 0.5;
+
+    const el = document.createElement('div');
+    el.className = 'fdoc';
+    el.style.cssText = `
+      width:${docW}px;height:${docH}px;
+      left:${left}%;bottom:-${docH+40}px;
+      --rot:${rot}deg;
+      opacity:${opacity};
+      animation-duration:${duration}s;
+      animation-delay:${delay}s;
+    `;
+    el.innerHTML = makeSVGDoc(docW, docH, pal);
+    bg.appendChild(el);
+  }
+
+  /* Create 22 floating documents */
+  for (let i = 0; i < 22; i++) createDoc();
+})();
+
+
+/* ======================================================
+   API HEALTH CHECK
+====================================================== */
+(function(){
+  const dot = document.getElementById('sdot');
+  const txt = document.getElementById('stxt');
+  const url = document.getElementById('apiUrl').value;
+  fetch(url + '/health', { signal: AbortSignal.timeout(4000) })
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.status === 'ok') { dot.classList.add('live'); txt.textContent = 'API online'; }
+      else { txt.textContent = 'API offline'; }
+    })
+    .catch(() => { txt.textContent = 'API offline'; });
+})();
+
+
+/* ======================================================
+   FILE HANDLING
+====================================================== */
+const MAX_MB = 150;
+const EX = {'.pdf':'pdf','.docx':'docx','.doc':'docx','.jpg':'image','.jpeg':'image','.png':'image','.bmp':'image','.tiff':'image','.tif':'image','.webp':'image'};
+const EC = {
+  names:        { l:'Names',         bg:'rgba(6,182,212,.1)',   fg:'#67e8f9' },
+  organizations:{ l:'Organizations', bg:'rgba(255,77,202,.1)',  fg:'#f9a8d4' },
+  dates:        { l:'Dates',         bg:'rgba(0,255,194,.08)',  fg:'#80ffe3' },
+  locations:    { l:'Locations',     bg:'rgba(251,191,36,.09)', fg:'#fde68a' },
+  amounts:      { l:'Amounts',       bg:'rgba(255,61,90,.1)',   fg:'#fda4af' },
+  percentages:  { l:'Percentages',   bg:'rgba(255,140,66,.1)',  fg:'#fed7aa' },
+  emails:       { l:'Emails',        bg:'rgba(184,71,255,.1)',  fg:'#d4a0ff' },
+  phones:       { l:'Phones',        bg:'rgba(100,200,80,.1)',  fg:'#bbf7d0' },
+  urls:         { l:'URLs',          bg:'rgba(99,102,241,.1)',  fg:'#c7d2fe' }
+};
+const STEPS = ['Reading file','Extracting text','Preprocessing','Groq AI analysis','spaCy NER','Sentiment ensemble','Computing stats'];
+let curFile = null;
+
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-on'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-on'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-on');
+  const f = e.dataTransfer.files[0]; if (f) onFile(f);
+});
+document.getElementById('fileInput').addEventListener('change', e => { if (e.target.files[0]) onFile(e.target.files[0]); });
+
+function onFile(f) {
+  const sizeMB = f.size / (1024 * 1024);
+  if (sizeMB > MAX_MB) {
+    const eb = document.getElementById('err');
+    eb.textContent = `File too large: ${sizeMB.toFixed(1)} MB. Maximum allowed is ${MAX_MB} MB.`;
+    eb.classList.add('show');
+    return;
+  }
+  document.getElementById('err').classList.remove('show');
+  curFile = f;
+  const ext = '.' + f.name.split('.').pop().toLowerCase();
+  const type = EX[ext] || 'unknown';
+  const icos = { pdf:'&#128213;', docx:'&#128216;', image:'&#128444;', unknown:'&#10067;' };
+  document.getElementById('fbico').innerHTML = icos[type] || '&#128196;';
+  document.getElementById('fbname').textContent = f.name;
+  document.getElementById('fbmeta').textContent = `${sizeMB.toFixed(1)} MB \u2022 ${type.toUpperCase()} detected`;
+  const chip = document.getElementById('fbchip');
+  chip.textContent = type.toUpperCase();
+  chip.className = 'fb-chip fc-' + (type === 'pdf' ? 'pdf' : type === 'docx' ? 'docx' : 'image');
+  document.getElementById('filebar').classList.add('show');
+  const btn = document.getElementById('abtn');
+  btn.disabled = type === 'unknown';
+  document.getElementById('results').classList.remove('show');
+}
+
+function setStep(idx, pct) {
+  const se = document.getElementById('psteps');
+  if (!se.children.length) {
+    STEPS.forEach(s => { const el = document.createElement('span'); el.className = 'ps'; el.textContent = s; se.appendChild(el); });
+  }
+  Array.from(se.children).forEach((el, i) => { el.className = 'ps' + (i < idx ? ' ok' : i === idx ? ' on' : ''); });
+  document.getElementById('pfill').style.width = pct + '%';
+  document.getElementById('ppct').textContent = pct + '%';
+  document.getElementById('plbl').textContent = STEPS[Math.min(idx, STEPS.length - 1)] + '...';
+}
+
+async function run() {
+  if (!curFile) return;
+  const apiUrl = document.getElementById('apiUrl').value.trim();
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const ext = '.' + curFile.name.split('.').pop().toLowerCase();
+  const ftype = EX[ext];
+  const btn = document.getElementById('abtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spin"></div> Analyzing...';
+  document.getElementById('prog').classList.add('show');
+  document.getElementById('results').classList.remove('show');
+  document.getElementById('err').classList.remove('show');
+  document.getElementById('psteps').innerHTML = '';
+  const tm = [0, 280, 560, 840, 1120, 1340, 1560];
+  for (let i = 0; i < STEPS.length; i++) { await new Promise(r => setTimeout(r, tm[i])); setStep(i, Math.round((i + 1) / STEPS.length * 82)); }
+  try {
+    const b64 = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = rej;
+      r.readAsDataURL(curFile);
+    });
+    const resp = await fetch(apiUrl + '/api/document-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      body: JSON.stringify({ fileName: curFile.name, fileType: ftype, fileBase64: b64 })
+    });
+    if (!resp.ok) { const e = await resp.json().catch(() => ({ detail: resp.statusText })); throw new Error('HTTP ' + resp.status + ': ' + (e.detail || resp.statusText)); }
+    const data = await resp.json();
+    setStep(STEPS.length, 100);
+    await new Promise(r => setTimeout(r, 380));
+    render(data);
+  } catch(e) {
+    const eb = document.getElementById('err');
+    eb.textContent = 'Error: ' + e.message + (e.message.toLowerCase().includes('fetch') || e.message.includes('Failed') ? '\n\nMake sure the API server is running:\nuvicorn main:app --reload' : '');
+    eb.classList.add('show');
+  } finally {
+    document.getElementById('prog').classList.remove('show');
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Analyze Document';
+  }
+}
+
+function render(r) {
+  const st = r.document_stats || {}, rd = st.readability || {}, sc = r.sentiment_scores || {};
+  document.getElementById('mw').textContent = st.word_count || '-';
+  document.getElementById('ms').textContent = st.sentence_count || '-';
+  document.getElementById('mr').textContent = (st.reading_time_minutes || '-') + ' min';
+  document.getElementById('mt').textContent = (r.processing_time_seconds || '-') + 's';
+  document.getElementById('sumtxt').textContent = r.summary || 'No summary available.';
+  document.getElementById('dtype').textContent = r.document_type || 'Unknown';
+  const s = r.sentiment || 'Neutral';
+  const sl = document.getElementById('slbl');
+  sl.textContent = s; sl.className = 'sent-big ' + (s === 'Positive' ? 's-pos' : s === 'Negative' ? 's-neg' : 's-neu');
+  const pos = Math.round((sc.Positive || 0) * 100), neu = Math.round((sc.Neutral || 0) * 100), neg = Math.round((sc.Negative || 0) * 100);
+  document.getElementById('spv').textContent = pos + '%'; document.getElementById('snv').textContent = neu + '%'; document.getElementById('sngv').textContent = neg + '%';
+  setTimeout(() => { document.getElementById('spb').style.width = pos + '%'; document.getElementById('snb').style.width = neu + '%'; document.getElementById('sngb').style.width = neg + '%'; }, 200);
+  const eg = document.getElementById('entg'); eg.innerHTML = ''; let any = false;
+  for (const [k, c] of Object.entries(EC)) {
+    const v = (r.entities || {})[k] || []; if (!v.length) continue; any = true;
+    const d = document.createElement('div');
+    d.innerHTML = '<div class="eg-ttl">' + c.l + '</div><div class="eg-tags">' + v.map(x => '<span class="etag" style="background:' + c.bg + ';color:' + c.fg + '">' + x + '</span>').join('') + '</div>';
+    eg.appendChild(d);
+  }
+  if (!any) eg.innerHTML = '<div style="color:var(--muted);font-size:13px">No entities detected.</div>';
+  const kp = r.key_phrases || [];
+  document.getElementById('kprow').innerHTML = kp.length ? kp.map(k => '<span class="kp">' + k + '</span>').join('') : '<span style="color:var(--muted);font-size:13px">None detected.</span>';
+  document.getElementById('rflesch').textContent = rd.flesch_reading_ease || '-';
+  document.getElementById('rfk').textContent = rd.flesch_kincaid_grade || '-';
+  document.getElementById('rfog').textContent = rd.gunning_fog_index || '-';
+  document.getElementById('rinterp').textContent = rd.interpretation || '-';
+  document.getElementById('rlang').textContent = (st.language || 'en').toUpperCase();
+  document.getElementById('rlex').textContent = (st.lexical_diversity || 0).toFixed(3);
+  const js = JSON.stringify(r, null, 2);
+  document.getElementById('jpre').textContent = js;
+  const blob = new Blob([js], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const dl = document.getElementById('dlbtn'); dl.href = url; dl.download = curFile.name.replace(/\.[^.]+$/, '') + '_analysis.json';
+  document.getElementById('results').classList.add('show');
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function toggleJ() {
+  const p = document.getElementById('jpre'), a = document.getElementById('jarr');
+  p.classList.toggle('show'); a.innerHTML = p.classList.contains('show') ? '&#9652;' : '&#9662;';
+>>>>>>> c8f492a (Complete frontend redesign - Space Grotesk + dark navy theme)
 }
 </script>
 </body>
