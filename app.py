@@ -1,1055 +1,505 @@
 """
-app.py — DocSense AI | Advanced Streamlit Frontend
+DocSense AI — FastAPI Backend
 HCL GUVI BuildBridge Hackathon 2026 — Track 2
 
-Run: streamlit run app.py
+Run:  uvicorn app:app --reload
+Docs: http://127.0.0.1:8000/docs
 """
 
-import streamlit as st
-import requests
-import base64
-import json
-import time
-import os
+import os, re, base64, time, io, logging
 from pathlib import Path
 
-# ── Page config (MUST be first) ───────────────────────────────────────────────
-st.set_page_config(
-    page_title="DocSense AI — Document Intelligence",
-    page_icon="⬡",
-    layout="wide",
-    initial_sidebar_state="collapsed",
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+# ─── Optional heavy deps (graceful fallback if not installed) ─────────────────
+try:
+    import pytesseract
+    from PIL import Image
+    HAS_OCR = True
+except ImportError:
+    HAS_OCR = False
+
+try:
+    import docx as python_docx
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
+try:
+    import fitz          # PyMuPDF
+    HAS_PYMUPDF = True
+except ImportError:
+    HAS_PYMUPDF = False
+
+try:
+    from groq import Groq
+    HAS_GROQ = True
+except ImportError:
+    HAS_GROQ = False
+
+try:
+    import spacy
+    nlp = spacy.load("en_core_web_sm")
+    HAS_SPACY = True
+except Exception:
+    HAS_SPACY = False
+
+try:
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    vader = SentimentIntensityAnalyzer()
+    HAS_VADER = True
+except ImportError:
+    HAS_VADER = False
+
+try:
+    from textblob import TextBlob
+    HAS_TEXTBLOB = True
+except ImportError:
+    HAS_TEXTBLOB = False
+
+try:
+    import yake
+    HAS_YAKE = True
+except ImportError:
+    HAS_YAKE = False
+
+try:
+    import textstat
+    HAS_TEXTSTAT = True
+except ImportError:
+    HAS_TEXTSTAT = False
+
+try:
+    from langdetect import detect as lang_detect
+    HAS_LANGDETECT = True
+except ImportError:
+    HAS_LANGDETECT = False
+
+# ─── Config ───────────────────────────────────────────────────────────────────
+API_KEY        = os.getenv("API_KEY",       "sk_track2_987654321")
+GROQ_API_KEY   = os.getenv("GROQ_API_KEY",  "")
+GROQ_MODEL     = os.getenv("GROQ_MODEL",    "llama-3.3-70b-versatile")
+MAX_SUMMARY_CH = 6000
+MAX_FILE_MB    = 150
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("docsense")
+
+# ─── App ──────────────────────────────────────────────────────────────────────
+app = FastAPI(
+    title="DocSense AI",
+    description="AI-Powered Document Analysis — HCL GUVI BuildBridge Hackathon 2026 Track 2",
+    version="1.0.0",
 )
 
-# ── Config ────────────────────────────────────────────────────────────────────
-API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
-API_KEY = os.getenv("API_KEY", "sk_track2_987654321")
-MAX_MB  = 150
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-EXT_MAP = {
-    ".pdf":"pdf", ".docx":"docx", ".doc":"docx",
-    ".jpg":"image", ".jpeg":"image", ".png":"image",
-    ".bmp":"image", ".tiff":"image", ".tif":"image", ".webp":"image",
-}
+# Serve sample PDFs for the web frontend
+SAMPLES_DIR = Path(__file__).parent / "samples"
+if SAMPLES_DIR.exists():
+    app.mount("/samples", StaticFiles(directory=str(SAMPLES_DIR)), name="samples")
 
-TECH_STACK = [
-    "Groq Llama 3.3 70B", "spaCy en_core_web_lg", "FinBERT Sentiment",
-    "Random Forest", "VADER + TextBlob", "YAKE Keyphrases",
-    "Tesseract OCR", "Decision Tree Ensemble", "TF-IDF TextRank",
+# ─── Auth ─────────────────────────────────────────────────────────────────────
+PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if request.url.path in PUBLIC_PATHS or request.url.path.startswith("/samples"):
+        return await call_next(request)
+    if request.headers.get("x-api-key","") != API_KEY:
+        return JSONResponse(status_code=401,
+            content={"status":"error","detail":"Unauthorized — invalid or missing x-api-key"})
+    return await call_next(request)
+
+# ─── Request model ────────────────────────────────────────────────────────────
+class AnalyzeRequest(BaseModel):
+    fileName:    str
+    fileType:    str   # pdf | docx | image
+    fileBase64:  str
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  TEXT EXTRACTION
+# ════════════════════════════════════════════════════════════════════════════════
+
+def _decode(data: str) -> bytes:
+    if "," in data:
+        data = data.split(",", 1)[1]
+    # safe pad
+    data += "==" * ((4 - len(data) % 4) % 4)
+    return base64.b64decode(data)
+
+
+def _extract_pdf(raw: bytes) -> str:
+    if HAS_PYMUPDF:
+        with fitz.open(stream=raw, filetype="pdf") as doc:
+            return "\n".join(page.get_text() for page in doc)
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(raw))
+        return "\n".join(p.extract_text() or "" for p in reader.pages)
+    except Exception as exc:
+        raise ValueError(f"PDF extraction failed: {exc}") from exc
+
+
+def _extract_docx(raw: bytes) -> str:
+    if not HAS_DOCX:
+        raise ValueError("python-docx not installed — run: pip install python-docx")
+    doc = python_docx.Document(io.BytesIO(raw))
+    return "\n".join(p.text for p in doc.paragraphs)
+
+
+def _extract_image(raw: bytes) -> str:
+    if not HAS_OCR:
+        raise ValueError("pytesseract / Pillow not installed")
+    img = Image.open(io.BytesIO(raw))
+    return pytesseract.image_to_string(img)
+
+
+def extract_text(raw: bytes, file_type: str) -> str:
+    ft = file_type.lower()
+    if ft == "pdf":
+        return _extract_pdf(raw)
+    if ft in ("docx","doc"):
+        return _extract_docx(raw)
+    if ft == "image":
+        return _extract_image(raw)
+    raise ValueError(f"Unsupported fileType: {file_type}")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  DOCUMENT TYPE CLASSIFICATION
+# ════════════════════════════════════════════════════════════════════════════════
+
+DOC_RULES = [
+    (["invoice","bill","amount due","payment due","total amount","remit"],            "Invoice"),
+    (["resume","curriculum vitae"," cv ","work experience","seeking internship"],     "Resume / CV"),
+    (["report","analysis","findings","recommendations","executive summary"],          "Report"),
+    (["contract","agreement","parties agree","terms and conditions","whereas"],       "Contract"),
+    (["abstract","methodology","references","doi","journal","hypothesis"],            "Research Paper"),
+    (["dear ","sincerely","regards,","to whom it may concern"],                       "Letter"),
+    (["policy","insurance","coverage","premium","beneficiary","policyholder"],        "Policy Document"),
+    (["receipt","order id","transaction id","purchase confirmed"],                    "Receipt / Order"),
+    (["patient","diagnosis","prescription","dosage","medical history"],               "Medical Document"),
+    (["agenda","minutes","resolution","motion","meeting held"],                       "Meeting Minutes"),
 ]
 
-STEPS = [
-    ("📥", "Reading file"),
-    ("🔍", "Extracting text"),
-    ("🧹", "Preprocessing"),
-    ("🤖", "Groq AI analysis"),
-    ("🏷️", "spaCy NER"),
-    ("😊", "Sentiment ensemble"),
-    ("📊", "Computing stats"),
-]
-
-EC = {
-    "names":         ("Names",         "#67e8f9", "rgba(6,182,212,0.15)"),
-    "organizations": ("Organizations", "#f9a8d4", "rgba(255,77,202,0.12)"),
-    "dates":         ("Dates",         "#80ffe3", "rgba(0,255,194,0.1)"),
-    "locations":     ("Locations",     "#fde68a", "rgba(251,191,36,0.1)"),
-    "amounts":       ("Amounts",       "#fda4af", "rgba(255,61,90,0.12)"),
-    "percentages":   ("Percentages",   "#fed7aa", "rgba(255,140,66,0.12)"),
-    "emails":        ("Emails",        "#d4a0ff", "rgba(184,71,255,0.12)"),
-    "phones":        ("Phones",        "#bbf7d0", "rgba(100,200,80,0.1)"),
-    "urls":          ("URLs",          "#c7d2fe", "rgba(99,102,241,0.12)"),
-}
-
-# ── CSS (Streamlit-compatible — no animations, no JS) ─────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@300;400;500;600;700;800&family=Lora:ital,wght@0,400;0,600;1,400;1,600&display=swap');
-
-/* === ROOT THEME === */
-html, body, [class*="css"], .stApp {
-    font-family: 'Bricolage Grotesque', sans-serif !important;
-    background-color: #000000 !important;
-    color: #d4ceff !important;
-}
-.stApp { background: #000000 !important; }
-.block-container {
-    padding: 1.5rem 2.5rem 4rem !important;
-    max-width: 1180px !important;
-    background: transparent !important;
-}
-
-/* === HIDE STREAMLIT DEFAULTS === */
-#MainMenu, footer, header { visibility: hidden; }
-.stDeployButton { display: none; }
-[data-testid="stToolbar"] { display: none; }
-
-/* === HERO === */
-.hero-wrap {
-    text-align: center;
-    padding: 3.5rem 1rem 2.5rem;
-    border-bottom: 1px solid rgba(184,71,255,0.15);
-    margin-bottom: 2rem;
-    background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(184,71,255,0.06) 0%, transparent 70%);
-    border-radius: 0 0 24px 24px;
-}
-.hero-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 20px;
-    border: 1px solid rgba(184,71,255,0.3);
-    border-radius: 30px;
-    background: rgba(184,71,255,0.08);
-    font-size: 11px;
-    color: #b847ff;
-    font-weight: 600;
-    letter-spacing: 0.09em;
-    margin-bottom: 20px;
-}
-.hero-title {
-    font-family: 'Lora', serif !important;
-    font-size: clamp(2.2rem, 4vw, 3.6rem);
-    color: #ffffff;
-    line-height: 1.08;
-    letter-spacing: -0.025em;
-    margin-bottom: 14px;
-}
-.hero-em {
-    font-style: italic;
-    background: linear-gradient(120deg, #b847ff, #ff4dca, #b847ff);
-    background-size: 200%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-.hero-desc {
-    color: #4a4570;
-    font-size: 0.97rem;
-    max-width: 540px;
-    margin: 0 auto 28px;
-    line-height: 1.75;
-    font-weight: 300;
-}
-.tech-wrap {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    justify-content: center;
-}
-.tech-pill {
-    padding: 5px 13px;
-    border-radius: 8px;
-    font-size: 11px;
-    font-weight: 500;
-    border: 1px solid rgba(255,255,255,0.07);
-    background: rgba(255,255,255,0.02);
-    color: rgba(255,255,255,0.38);
-}
-
-/* === SECTION DIVIDER === */
-.sec-div {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(184,71,255,0.3), transparent);
-    margin: 1.5rem 0;
-}
-
-/* === UPLOAD SECTION === */
-.upload-section {
-    background: #04050e;
-    border: 1px solid rgba(184,71,255,0.14);
-    border-radius: 20px;
-    padding: 28px;
-    margin-bottom: 16px;
-    position: relative;
-    overflow: hidden;
-}
-.upload-section::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, #b847ff 40%, #ff4dca 60%, transparent);
-}
-.upload-title {
-    font-family: 'Lora', serif !important;
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: #fff;
-    margin-bottom: 6px;
-}
-.upload-desc {
-    font-size: 12px;
-    color: #4a4570;
-    margin-bottom: 16px;
-    line-height: 1.6;
-}
-.fmt-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-bottom: 14px;
-}
-.fmt-chip {
-    padding: 3px 10px;
-    border-radius: 6px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
-.fmt-r { background: rgba(255,61,90,0.1); color: #ff8fa0; border: 1px solid rgba(255,61,90,0.2); }
-.fmt-b { background: rgba(184,71,255,0.1); color: #d4a0ff; border: 1px solid rgba(184,71,255,0.2); }
-.fmt-g { background: rgba(0,255,194,0.07); color: #80ffe3; border: 1px solid rgba(0,255,194,0.15); }
-
-/* === FILE UPLOADED BAR === */
-.file-bar {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 13px 18px;
-    background: rgba(184,71,255,0.07);
-    border: 1px solid rgba(184,71,255,0.2);
-    border-radius: 12px;
-    margin: 10px 0;
-}
-.file-bar-icon { font-size: 24px; flex-shrink: 0; }
-.file-bar-name { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 2px; }
-.file-bar-meta { font-size: 11px; color: #4a4570; }
-.type-chip {
-    padding: 3px 12px;
-    border-radius: 20px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    flex-shrink: 0;
-    margin-left: auto;
-}
-.tc-pdf  { background: rgba(255,61,90,0.14);  color: #ff8fa0; border: 1px solid rgba(255,61,90,0.28); }
-.tc-docx { background: rgba(184,71,255,0.14); color: #d4a0ff; border: 1px solid rgba(184,71,255,0.28); }
-.tc-image{ background: rgba(0,255,194,0.08);  color: #80ffe3; border: 1px solid rgba(0,255,194,0.18); }
-
-/* === CONFIG INPUTS === */
-[data-testid="stTextInput"] > div > div > input {
-    background: rgba(255,255,255,0.04) !important;
-    border: 1px solid rgba(255,255,255,0.09) !important;
-    border-radius: 9px !important;
-    color: #fff !important;
-    font-family: 'Bricolage Grotesque', sans-serif !important;
-    font-size: 13px !important;
-}
-[data-testid="stTextInput"] > div > div > input:focus {
-    border-color: rgba(184,71,255,0.5) !important;
-    box-shadow: 0 0 0 1px rgba(184,71,255,0.2) !important;
-}
-[data-testid="stTextInput"] label {
-    font-size: 10px !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.12em !important;
-    color: #4a4570 !important;
-}
-
-/* === FILE UPLOADER === */
-[data-testid="stFileUploader"] {
-    background: rgba(7,9,26,0.95) !important;
-    border: 1px solid rgba(184,71,255,0.22) !important;
-    border-radius: 14px !important;
-    padding: 0.8rem !important;
-}
-[data-testid="stFileUploader"]:hover {
-    border-color: rgba(184,71,255,0.5) !important;
-}
-[data-testid="stFileUploaderDropzoneInstructions"] {
-    color: #4a4570 !important;
-}
-[data-testid="stFileUploaderDropzone"] {
-    background: transparent !important;
-}
-
-/* === ANALYZE BUTTON === */
-.stButton > button {
-    background: linear-gradient(135deg, #b847ff, #ff4dca) !important;
-    color: #fff !important;
-    border: none !important;
-    border-radius: 12px !important;
-    font-family: 'Bricolage Grotesque', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 15px !important;
-    padding: 0.75rem 2rem !important;
-    width: 100% !important;
-    letter-spacing: 0.01em !important;
-    transition: opacity 0.2s !important;
-    position: relative !important;
-}
-.stButton > button:hover { opacity: 0.88 !important; transform: translateY(-1px) !important; }
-.stButton > button:disabled { opacity: 0.22 !important; cursor: not-allowed !important; }
-
-/* === PROGRESS === */
-.stProgress > div > div { background: linear-gradient(90deg, #b847ff, #ff4dca) !important; border-radius: 3px !important; }
-.stProgress > div { background: rgba(255,255,255,0.05) !important; border-radius: 3px !important; }
-
-/* === RESULTS HEADER === */
-.res-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-bottom: 18px;
-    border-bottom: 1px solid rgba(184,71,255,0.14);
-    margin-bottom: 22px;
-}
-.res-title {
-    font-family: 'Lora', serif !important;
-    font-size: 2rem;
-    font-weight: 600;
-    color: #fff;
-    letter-spacing: -0.02em;
-}
-.res-ok {
-    padding: 5px 15px;
-    background: rgba(0,255,194,0.09);
-    border: 1px solid rgba(0,255,194,0.24);
-    border-radius: 20px;
-    font-size: 10px;
-    font-weight: 700;
-    color: #00ffc2;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-}
-
-/* === METRIC CARDS === */
-.metric-card {
-    background: #07091a;
-    border: 1px solid rgba(184,71,255,0.13);
-    border-radius: 16px;
-    padding: 20px 16px;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-    transition: border-color 0.2s, transform 0.2s;
-    cursor: default;
-    height: 100%;
-}
-.metric-card:hover { border-color: rgba(184,71,255,0.35); transform: translateY(-3px); }
-.metric-top {
-    position: absolute;
-    top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, #b847ff, #ff4dca);
-}
-.metric-num {
-    font-family: 'Lora', serif !important;
-    font-size: 2.2rem;
-    font-weight: 600;
-    color: #fff;
-    line-height: 1;
-    margin-bottom: 7px;
-}
-.metric-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: #4a4570;
-}
-
-/* === CONTENT CARDS === */
-.ds-card {
-    background: #07091a;
-    border: 1px solid rgba(184,71,255,0.12);
-    border-radius: 18px;
-    padding: 22px;
-    margin-bottom: 12px;
-    height: 100%;
-    transition: border-color 0.2s;
-}
-.ds-card:hover { border-color: rgba(184,71,255,0.25); }
-.ds-card-title {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    color: rgba(255,255,255,0.38);
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.ds-card-title::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: rgba(184,71,255,0.12);
-}
-.sum-text {
-    font-size: 14.5px;
-    color: rgba(255,255,255,0.78);
-    line-height: 1.85;
-    font-weight: 300;
-}
-.dtype-badge {
-    display: inline-block;
-    padding: 4px 13px;
-    background: rgba(232,200,74,0.08);
-    border: 1px solid rgba(232,200,74,0.2);
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #e8c84a;
-    margin-top: 12px;
-}
-
-/* === SENTIMENT === */
-.sent-label {
-    font-family: 'Lora', serif !important;
-    font-size: 2.3rem;
-    font-weight: 600;
-    line-height: 1;
-    margin-bottom: 18px;
-}
-.s-pos { color: #00ffc2; }
-.s-neg { color: #ff3d5a; }
-.s-neu { color: #ff8c42; }
-.sbar-label {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    color: #4a4570;
-    margin-bottom: 4px;
-}
-.sbar-track {
-    height: 5px;
-    background: rgba(255,255,255,0.05);
-    border-radius: 3px;
-    overflow: hidden;
-    margin-bottom: 10px;
-}
-.sbar-fill { height: 100%; border-radius: 3px; }
-
-/* === PROFILE CARD === */
-.profile-card {
-    background: linear-gradient(135deg, rgba(184,71,255,0.08), rgba(255,77,202,0.05));
-    border: 1px solid rgba(184,71,255,0.22);
-    border-radius: 16px;
-    padding: 20px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 12px;
-}
-.profile-avatar {
-    width: 56px; height: 56px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #b847ff, #ff4dca);
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Lora', serif;
-    font-size: 1.4rem; font-weight: 600; color: #fff;
-    flex-shrink: 0;
-}
-.profile-name { font-family: 'Lora', serif !important; font-size: 1.25rem; font-weight: 600; color: #fff; margin-bottom: 3px; }
-.profile-role { font-size: 12px; color: #4a4570; margin-bottom: 8px; }
-.pcon {
-    display: inline-block;
-    padding: 3px 10px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 6px;
-    font-size: 11px;
-    color: rgba(255,255,255,0.55);
-    margin: 2px;
-}
-
-/* === SKILL TAGS === */
-.skill-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
-.skill-tag {
-    padding: 5px 13px;
-    background: rgba(184,71,255,0.09);
-    border: 1px solid rgba(184,71,255,0.22);
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 500;
-    color: #d4a0ff;
-}
-
-/* === SECTION ITEMS === */
-.sec-item {
-    padding: 11px 0;
-    border-bottom: 1px solid rgba(184,71,255,0.08);
-    font-size: 13px;
-    color: rgba(255,255,255,0.6);
-    line-height: 1.6;
-}
-.sec-item:last-child { border-bottom: none; }
-
-/* === ENTITY TAGS === */
-.ent-group-title {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #4a4570;
-    margin-bottom: 6px;
-}
-.etag {
-    display: inline-block;
-    padding: 3px 9px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    margin: 2px;
-}
-
-/* === KEY PHRASES === */
-.kp-wrap { display: flex; flex-wrap: wrap; gap: 7px; }
-.kpill {
-    display: inline-block;
-    padding: 6px 14px;
-    background: rgba(184,71,255,0.08);
-    border: 1px solid rgba(184,71,255,0.2);
-    border-radius: 8px;
-    font-size: 12px;
-    color: #d4a0ff;
-}
-
-/* === READABILITY GRID === */
-.read-item {
-    background: rgba(255,255,255,0.03);
-    border-radius: 10px;
-    padding: 13px;
-    text-align: center;
-    margin-bottom: 8px;
-}
-.read-val {
-    font-family: 'Lora', serif !important;
-    font-size: 1.7rem;
-    font-weight: 600;
-    line-height: 1;
-    margin-bottom: 4px;
-}
-.read-key {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #4a4570;
-    font-weight: 700;
-}
-
-/* === MISSING FIELDS === */
-.missing-wrap {
-    background: rgba(232,200,74,0.05);
-    border: 1px solid rgba(232,200,74,0.2);
-    border-radius: 14px;
-    padding: 18px 20px;
-    margin-bottom: 12px;
-}
-.missing-title {
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #e8c84a;
-    margin-bottom: 10px;
-}
-.miss-tag {
-    display: inline-block;
-    padding: 4px 12px;
-    background: rgba(232,200,74,0.08);
-    border: 1px solid rgba(232,200,74,0.18);
-    border-radius: 20px;
-    font-size: 11px;
-    color: #e8c84a;
-    font-weight: 500;
-    margin: 3px;
-}
-
-/* === STEP INDICATORS === */
-.step-done { color: #00ffc2; font-weight: 600; }
-.step-active { color: #b847ff; font-weight: 600; }
-.step-pending { color: #4a4570; }
-
-/* === EXPANDER === */
-[data-testid="stExpander"] {
-    background: #07091a !important;
-    border: 1px solid rgba(184,71,255,0.12) !important;
-    border-radius: 12px !important;
-}
-[data-testid="stExpander"] summary {
-    color: #4a4570 !important;
-    font-size: 13px !important;
-}
-
-/* === SELECT/RADIO === */
-[data-testid="stSelectbox"] select,
-[data-baseweb="select"] {
-    background: rgba(255,255,255,0.04) !important;
-    border-color: rgba(255,255,255,0.09) !important;
-    color: #fff !important;
-}
-
-/* === STREAMLIT COLUMNS FIX === */
-[data-testid="column"] { padding: 0 6px !important; }
-
-/* === DOWNLOAD BUTTON === */
-[data-testid="stDownloadButton"] > button {
-    background: rgba(0,255,194,0.08) !important;
-    border: 1px solid rgba(0,255,194,0.2) !important;
-    color: #00ffc2 !important;
-    border-radius: 10px !important;
-    font-family: 'Bricolage Grotesque', sans-serif !important;
-    font-weight: 600 !important;
-}
-[data-testid="stDownloadButton"] > button:hover {
-    background: rgba(0,255,194,0.15) !important;
-}
-
-/* === ERROR BOX === */
-.err-box {
-    background: rgba(255,61,90,0.07);
-    border: 1px solid rgba(255,61,90,0.25);
-    border-radius: 12px;
-    padding: 14px 18px;
-    color: #ff8fa0;
-    font-size: 13px;
-    line-height: 1.6;
-    margin: 12px 0;
-    white-space: pre-wrap;
-}
-
-/* === SUCCESS BOX === */
-.success-box {
-    background: rgba(0,255,194,0.06);
-    border: 1px solid rgba(0,255,194,0.2);
-    border-radius: 12px;
-    padding: 12px 18px;
-    color: #00ffc2;
-    font-size: 13px;
-    margin: 8px 0;
-}
-
-/* === FOOTER === */
-.app-footer {
-    text-align: center;
-    padding: 24px 0 8px;
-    border-top: 1px solid rgba(184,71,255,0.12);
-    margin-top: 40px;
-    font-size: 12px;
-    color: #4a4570;
-}
-.app-footer a { color: rgba(184,71,255,0.7); text-decoration: none; }
-.app-footer a:hover { color: #b847ff; }
-</style>
-""", unsafe_allow_html=True)
+def classify_doc(text: str, filename: str) -> str:
+    tl = (text[:3000] + " " + filename).lower()
+    for keywords, label in DOC_RULES:
+        if any(k in tl for k in keywords):
+            return label
+    return "General Document"
 
 
-# ── Helper functions ──────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════════
+#  AI SUMMARISATION (Groq → fallback extractive)
+# ════════════════════════════════════════════════════════════════════════════════
 
-def detect_type(name: str) -> str:
-    ext = "." + name.split(".")[-1].lower()
-    return EXT_MAP.get(ext, "unknown")
-
-
-def card(title: str, icon: str, content: str):
-    return f"""
-    <div class="ds-card">
-        <div class="ds-card-title">{icon} {title}</div>
-        {content}
-    </div>"""
+def _extractive_summary(text: str) -> str:
+    sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) > 40]
+    return " ".join(sents[:3]) or text[:400]
 
 
-def metric_card(num, label):
-    return f"""
-    <div class="metric-card">
-        <div class="metric-top"></div>
-        <div class="metric-num">{num}</div>
-        <div class="metric-label">{label}</div>
-    </div>"""
+def summarise(text: str, doc_type: str) -> str:
+    if HAS_GROQ and GROQ_API_KEY:
+        try:
+            client = Groq(api_key=GROQ_API_KEY)
+            resp = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role":"system","content":(
+                        "You are an expert document analyst. "
+                        "Write a concise 2-4 sentence summary of the document below. "
+                        "Capture the main purpose, key facts, and any conclusions. "
+                        "Plain prose only — no bullets, no markdown."
+                    )},
+                    {"role":"user","content":f"Document type: {doc_type}\n\n{text[:MAX_SUMMARY_CH]}"},
+                ],
+                temperature=0.25,
+                max_tokens=280,
+            )
+            return resp.choices[0].message.content.strip()
+        except Exception as exc:
+            log.warning(f"Groq summarisation failed: {exc}")
+    return _extractive_summary(text)
 
 
-def is_resume(r: dict) -> bool:
-    dt = (r.get("document_type","")).lower()
-    sm = (r.get("summary","")).lower()
-    kp = " ".join(r.get("key_phrases",[])).lower()
-    return any(w in dt+sm+kp for w in ["resume","cv","curriculum","intern","skills","education","experience"])
+# ════════════════════════════════════════════════════════════════════════════════
+#  ENTITY EXTRACTION
+# ════════════════════════════════════════════════════════════════════════════════
+
+RE_EMAIL   = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
+RE_URL     = re.compile(r"https?://[^\s<>\"'`]+|www\.[^\s<>\"'`]+")
+RE_PHONE   = re.compile(r"(\+?\d[\d\s\-().]{6,13}\d)")
+RE_AMOUNT  = re.compile(
+    r"[$₹€£¥]\s?\d[\d,]*\.?\d*"
+    r"|\d[\d,]*\s?(?:USD|INR|EUR|GBP|AUD|SGD|crore|lakh|million|billion)",
+    re.I
+)
+RE_PCT     = re.compile(r"\d+\.?\d*\s?%")
+RE_DATE    = re.compile(
+    r"\b(?:\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}"
+    r"|\d{4}[/\-]\d{2}[/\-]\d{2}"
+    r"|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s\d{1,2},?\s\d{4}"
+    r"|\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s\d{4})\b",
+    re.I
+)
+
+def _unique(lst, limit=10):
+    seen, out = set(), []
+    for x in lst:
+        x = x.strip()
+        if x and x not in seen:
+            seen.add(x); out.append(x)
+            if len(out) >= limit:
+                break
+    return out
 
 
-def extract_resume(r: dict, text: str) -> dict:
-    t = text.lower()
-    ents = r.get("entities", {})
+def extract_entities(text: str) -> dict:
+    ents = {
+        "names":[], "organizations":[], "dates":[],
+        "locations":[], "amounts":[], "percentages":[],
+        "emails":[], "phones":[], "urls":[],
+    }
 
-    TECH = ["python","machine learning","deep learning","sql","fastapi","opencv","llm","c++","c/c++",
-            "data visualization","data manipulation","javascript","react","node.js","tensorflow",
-            "pytorch","keras","scikit-learn","pandas","numpy","docker","git","linux","azure","aws",
-            "mongodb","mysql","nlp","computer vision","streamlit","flask","django","spark","hadoop"]
-    skills = set()
-    for k in TECH:
-        if k in t:
-            skills.add(k.replace("c/c++","C/C++").upper() if len(k)<=4 else k.title())
-    for kp in r.get("key_phrases",[]):
-        if 2 < len(kp) < 25:
-            skills.add(kp.title())
+    ents["emails"]      = _unique(RE_EMAIL.findall(text))
+    ents["urls"]        = _unique(RE_URL.findall(text))
+    ents["amounts"]     = _unique(RE_AMOUNT.findall(text))
+    ents["percentages"] = _unique(RE_PCT.findall(text))
+    ents["dates"]       = _unique(RE_DATE.findall(text))
 
-    sents = [s.strip() for s in text.replace("\n"," ").split(".") if len(s.strip()) > 15]
+    # Phones — keep only plausible ones
+    raw_phones = [re.sub(r"\s+","",m.group()) for m in RE_PHONE.finditer(text)]
+    ents["phones"] = _unique(
+        [p for p in raw_phones if 7 <= len(re.sub(r"\D","",p)) <= 15], limit=5
+    )
 
-    projects, experience, education, achievements = [], [], [], []
-    for s in sents:
-        sl = s.lower()
-        if any(w in sl for w in ["project","built","developed","farmora","honeypot","agentic","created"]) and len(s)<300:
-            projects.append(s)
-        if any(w in sl for w in ["intern","engineer","developer","analyst","worked"]) and len(s)<250:
-            experience.append(s)
-        if any(w in sl for w in ["b.tech","bachelor","master","university","college","degree"]) and len(s)<300:
-            education.append(s)
-        if any(w in sl for w in ["finalist","winner","award","achievement","national","hackathon"]) and len(s)<300:
-            achievements.append(s)
+    if HAS_SPACY:
+        doc_nlp = nlp(text[:10000])
+        names, orgs, locs = [], [], []
+        for ent in doc_nlp.ents:
+            v = ent.text.strip()
+            if not v or len(v) < 2:
+                continue
+            if ent.label_ == "PERSON":
+                names.append(v)
+            elif ent.label_ in ("ORG","PRODUCT","WORK_OF_ART"):
+                orgs.append(v)
+            elif ent.label_ in ("GPE","LOC","FAC"):
+                locs.append(v)
+        ents["names"]         = _unique(names)
+        ents["organizations"] = _unique(orgs)
+        ents["locations"]     = _unique(locs)
+    else:
+        # Heuristic name extraction: consecutive capitalised words
+        caps = re.findall(r"(?<![.!?\n])([A-Z][a-z]+ (?:[A-Z][a-z]+ ?){1,2})", text)
+        ents["names"] = _unique(caps, 8)
 
-    urls = ents.get("urls",[])
-    linkedin  = next((u for u in urls if "linkedin" in u.lower()),"")
-    github    = next((u for u in urls if "github" in u.lower()),"")
-    portfolio = next((u for u in urls if "linkedin" not in u.lower() and "github" not in u.lower()),"")
+    return ents
 
-    missing = []
-    if not linkedin:   missing.append("LinkedIn URL")
-    if not github:     missing.append("GitHub URL")
-    if not portfolio:  missing.append("Portfolio / Website")
-    if not ents.get("emails"):  missing.append("Email address")
-    if not ents.get("phones"):  missing.append("Phone number")
-    if not any(w in t for w in ["intern","experience","worked"]): missing.append("Work / Internship experience")
-    if "certif" not in t:       missing.append("Certifications")
-    if not any(w in t for w in ["gpa","cgpa"]):  missing.append("GPA / CGPA")
-    if "volunteer" not in t:    missing.append("Volunteer work")
-    if not any(w in t for w in ["language","hindi","english","french","german"]): missing.append("Languages known")
-    if "open source" not in t and "github.com/" not in t: missing.append("Open source contributions")
 
+# ════════════════════════════════════════════════════════════════════════════════
+#  SENTIMENT ANALYSIS
+# ════════════════════════════════════════════════════════════════════════════════
+
+def analyse_sentiment(text: str):
+    chunk = text[:6000]
+    pos = neu = neg = 0.0
+
+    if HAS_VADER:
+        vs = vader.polarity_scores(chunk)
+        pos, neu, neg = vs["pos"], vs["neu"], vs["neg"]
+
+    if HAS_TEXTBLOB:
+        pol = TextBlob(chunk).sentiment.polarity
+        b_pos = max(pol, 0.0)
+        b_neg = abs(min(pol, 0.0))
+        b_neu = max(1.0 - b_pos - b_neg, 0.0)
+        if HAS_VADER:
+            pos = (pos + b_pos) / 2
+            neg = (neg + b_neg) / 2
+            neu = (neu + b_neu) / 2
+        else:
+            pos, neg, neu = b_pos, b_neg, b_neu
+
+    if not (HAS_VADER or HAS_TEXTBLOB):
+        neu = 1.0
+
+    total = pos + neu + neg or 1.0
+    scores = {
+        "Positive": round(pos / total, 4),
+        "Neutral":  round(neu / total, 4),
+        "Negative": round(neg / total, 4),
+    }
+    label = max(scores, key=scores.__getitem__)
+    return label, scores
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  KEY PHRASES
+# ════════════════════════════════════════════════════════════════════════════════
+
+def extract_keyphrases(text: str, n: int = 15) -> list:
+    if HAS_YAKE:
+        try:
+            extractor = yake.KeywordExtractor(lan="en", n=2, top=n, dedupLim=0.7)
+            return [kw for kw, _ in extractor.extract_keywords(text[:8000])]
+        except Exception:
+            pass
+    # Fallback: frequency of capitalised bigrams + unigrams
+    tokens = re.findall(r"\b[A-Z][A-Za-z]{2,}\b", text)
+    freq: dict = {}
+    for t in tokens:
+        freq[t] = freq.get(t, 0) + 1
+    return sorted(freq, key=freq.__getitem__, reverse=True)[:n]
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  DOCUMENT STATS
+# ════════════════════════════════════════════════════════════════════════════════
+
+def readability(text: str) -> dict:
+    if not HAS_TEXTSTAT:
+        return {"flesch_reading_ease":"-","flesch_kincaid_grade":"-",
+                "gunning_fog_index":"-","interpretation":"-"}
+    try:
+        fre = round(textstat.flesch_reading_ease(text), 1)
+        fkg = round(textstat.flesch_kincaid_grade(text), 1)
+        fog = round(textstat.gunning_fog(text), 1)
+        interp = ("Easy" if fre >= 70 else "Standard" if fre >= 50
+                  else "Difficult" if fre >= 30 else "Very Difficult")
+        return {"flesch_reading_ease":fre,"flesch_kincaid_grade":fkg,
+                "gunning_fog_index":fog,"interpretation":interp}
+    except Exception:
+        return {"flesch_reading_ease":"-","flesch_kincaid_grade":"-",
+                "gunning_fog_index":"-","interpretation":"-"}
+
+
+def detect_language(text: str) -> str:
+    if HAS_LANGDETECT:
+        try:
+            return lang_detect(text[:500])
+        except Exception:
+            pass
+    return "en"
+
+
+def lexical_diversity(text: str) -> float:
+    words = re.findall(r"\b\w+\b", text.lower())
+    return round(len(set(words)) / len(words), 4) if words else 0.0
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  API ROUTES
+# ════════════════════════════════════════════════════════════════════════════════
+
+@app.get("/health", tags=["system"])
+async def health():
+    """Check API status and available components."""
     return {
-        "name": (ents.get("names",[""])[0]),
-        "skills": list(skills),
-        "emails": ents.get("emails",[]),
-        "phones": ents.get("phones",[]),
-        "locations": ents.get("locations",[]),
-        "linkedin": linkedin, "github": github, "portfolio": portfolio,
-        "projects": projects[:4],
-        "experience": experience[:3],
-        "education": education[:3],
-        "achievements": achievements[:4],
-        "missing": missing,
+        "status": "ok",
+        "components": {
+            "groq":      HAS_GROQ and bool(GROQ_API_KEY),
+            "spacy":     HAS_SPACY,
+            "ocr":       HAS_OCR,
+            "yake":      HAS_YAKE,
+            "vader":     HAS_VADER,
+            "textblob":  HAS_TEXTBLOB,
+            "textstat":  HAS_TEXTSTAT,
+            "pymupdf":   HAS_PYMUPDF,
+            "docx":      HAS_DOCX,
+        }
     }
 
 
-# ── HERO ──────────────────────────────────────────────────────────────────────
-st.markdown(f"""
-<div class="hero-wrap">
-  <div class="hero-badge">⬡ HCL GUVI BuildBridge Hackathon 2026 — Track 2</div>
-  <div class="hero-title">Transform any document into <span class="hero-em">intelligence</span></div>
-  <p class="hero-desc">Upload PDF, DOCX, or image up to {MAX_MB} MB. AI pipeline extracts summaries, entities, sentiment, keyphrases, and for resumes — skills, projects, experience and missing fields.</p>
-  <div class="tech-wrap">
-    {"".join(f'<span class="tech-pill">{t}</span>' for t in TECH_STACK)}
-  </div>
-</div>
-""", unsafe_allow_html=True)
+@app.post("/api/document-analyze", tags=["analysis"])
+async def analyze(req: AnalyzeRequest):
+    """
+    Analyze a document and extract structured intelligence.
 
+    **Authentication**: Provide `x-api-key` header.
 
-# ── UPLOAD SECTION ────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="upload-section">
-  <div class="upload-title">Upload your document</div>
-  <p class="upload-desc">Supports PDF, DOCX, and image formats. Resumes get full profile extraction — skills, projects, experience, education, achievements and missing field detection.</p>
-  <div class="fmt-row">
-    <span class="fmt-chip fmt-r">PDF</span>
-    <span class="fmt-chip fmt-b">DOCX</span>
-    <span class="fmt-chip fmt-b">DOC</span>
-    <span class="fmt-chip fmt-g">JPG</span>
-    <span class="fmt-chip fmt-g">PNG</span>
-    <span class="fmt-chip fmt-g">BMP</span>
-    <span class="fmt-chip fmt-g">TIFF</span>
-    <span class="fmt-chip fmt-g">WEBP</span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+    **Body**:
+    - `fileName`: original file name
+    - `fileType`: `pdf` | `docx` | `image`
+    - `fileBase64`: base64-encoded file content
+    """
+    t0 = time.time()
+    log.info(f"[analyze] {req.fileName} ({req.fileType})")
 
-uploaded = st.file_uploader(
-    f"Drop file here or click to browse — max {MAX_MB} MB",
-    type=["pdf","docx","doc","jpg","jpeg","png","bmp","tiff","webp"],
-    label_visibility="visible",
-)
-
-# Config row
-col_url, col_key = st.columns(2)
-with col_url:
-    api_url = st.text_input("API URL", value=API_URL)
-with col_key:
-    api_key = st.text_input("API Key", value=API_KEY, type="password")
-
-st.markdown('<div style="font-size:11px;color:#4a4570;margin:-8px 0 12px">⚠ Keep defaults for local server. Change only for deployed API.</div>', unsafe_allow_html=True)
-
-# ── File info ─────────────────────────────────────────────────────────────────
-can_analyze = False
-
-if uploaded:
-    size_mb = len(uploaded.getvalue()) / (1024 * 1024)
-    ftype   = detect_type(uploaded.name)
-
-    if size_mb > MAX_MB:
-        st.markdown(f'<div class="err-box">⚠ File too large: {size_mb:.1f} MB. Maximum is {MAX_MB} MB.</div>', unsafe_allow_html=True)
-    elif ftype == "unknown":
-        st.markdown('<div class="err-box">Unsupported file format. Please upload PDF, DOCX, or an image.</div>', unsafe_allow_html=True)
-    else:
-        icons = {"pdf":"📕","docx":"📘","image":"🖼️"}
-        chip_cls = {"pdf":"tc-pdf","docx":"tc-docx","image":"tc-image"}
-        st.markdown(f"""
-        <div class="file-bar">
-          <div class="file-bar-icon">{icons.get(ftype,'📄')}</div>
-          <div style="flex:1">
-            <div class="file-bar-name">{uploaded.name}</div>
-            <div class="file-bar-meta">{size_mb:.1f} MB &nbsp;•&nbsp; {ftype.upper()} detected &nbsp;•&nbsp; Ready to analyze</div>
-          </div>
-          <div class="type-chip {chip_cls.get(ftype,'')}">{ftype.upper()}</div>
-        </div>""", unsafe_allow_html=True)
-        can_analyze = True
-
-# ── Analyze button ────────────────────────────────────────────────────────────
-analyze_clicked = st.button(
-    "⚡ Analyze Document",
-    disabled=not can_analyze,
-    use_container_width=True,
-)
-
-# ── Analysis pipeline ─────────────────────────────────────────────────────────
-if analyze_clicked and can_analyze:
-    ftype = detect_type(uploaded.name)
-
-    # Progress bar + step indicators
-    prog_bar  = st.progress(0)
-    step_cols = st.columns(len(STEPS))
-
-    def update_steps(active_idx):
-        for i, (icon, label) in enumerate(STEPS):
-            with step_cols[i]:
-                if i < active_idx:
-                    st.markdown(f'<div style="text-align:center;font-size:11px" class="step-done">✓ {label}</div>', unsafe_allow_html=True)
-                elif i == active_idx:
-                    st.markdown(f'<div style="text-align:center;font-size:11px" class="step-active">{icon} {label}</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown(f'<div style="text-align:center;font-size:11px" class="step-pending">○ {label}</div>', unsafe_allow_html=True)
-
-    status_txt = st.empty()
-
-    for i, (icon, label) in enumerate(STEPS):
-        update_steps(i)
-        prog_bar.progress(int((i + 1) / len(STEPS) * 82))
-        status_txt.markdown(f'<div style="font-size:12px;color:#4a4570;text-align:center">{icon} {label}...</div>', unsafe_allow_html=True)
-        time.sleep(0.28)
-
+    # Decode
     try:
-        # Encode file
-        b64 = base64.b64encode(uploaded.getvalue()).decode()
+        raw = _decode(req.fileBase64)
+    except Exception as exc:
+        return JSONResponse(status_code=400,
+            content={"status":"error","detail":f"Invalid base64: {exc}"})
 
-        # Call API
-        resp = requests.post(
-            f"{api_url}/api/document-analyze",
-            json={"fileName": uploaded.name, "fileType": ftype, "fileBase64": b64},
-            headers={"Content-Type":"application/json","x-api-key":api_key},
-            timeout=300,
-        )
-        resp.raise_for_status()
-        r = resp.json()
+    # Size guard
+    if len(raw) > MAX_FILE_MB * 1024 * 1024:
+        return JSONResponse(status_code=413,
+            content={"status":"error","detail":f"File exceeds {MAX_FILE_MB} MB limit"})
 
-        # Complete
-        prog_bar.progress(100)
-        update_steps(len(STEPS))
-        status_txt.markdown('<div class="success-box">✓ Analysis complete!</div>', unsafe_allow_html=True)
-        time.sleep(0.5)
-        prog_bar.empty()
-        status_txt.empty()
-        for col in step_cols:
-            col.empty()
+    # Extract text
+    try:
+        text = extract_text(raw, req.fileType).strip()
+    except Exception as exc:
+        return JSONResponse(status_code=422,
+            content={"status":"error","detail":str(exc)})
 
-        # ── SESSION STATE ─────────────────────────────────────────────────────
-        st.session_state["result"]   = r
-        st.session_state["filename"] = uploaded.name
+    if not text:
+        return JSONResponse(status_code=422,
+            content={"status":"error","detail":"No text could be extracted from this document."})
 
-    except requests.exceptions.ConnectionError:
-        prog_bar.empty(); status_txt.empty()
-        st.markdown('<div class="err-box">❌ Cannot connect to API server.\n\nMake sure it is running:\nuvicorn main:app --reload</div>', unsafe_allow_html=True)
-    except Exception as e:
-        prog_bar.empty(); status_txt.empty()
-        st.markdown(f'<div class="err-box">❌ Error: {str(e)}</div>', unsafe_allow_html=True)
+    # Pipeline
+    doc_type              = classify_doc(text, req.fileName)
+    summary               = summarise(text, doc_type)
+    entities              = extract_entities(text)
+    sentiment, sent_scores = analyse_sentiment(text)
+    key_phrases           = extract_keyphrases(text)
+    lang                  = detect_language(text)
+    lex                   = lexical_diversity(text)
+    rd                    = readability(text)
+
+    words = len(re.findall(r"\b\w+\b", text))
+    sents = max(len(re.split(r"[.!?]+", text)), 1)
+    elapsed = round(time.time() - t0, 2)
+
+    log.info(f"[analyze] done in {elapsed}s — {words} words, type={doc_type}, sentiment={sentiment}")
+
+    return {
+        "status":          "success",
+        "fileName":        req.fileName,
+        "document_type":   doc_type,
+        "summary":         summary,
+        "entities":        entities,
+        "sentiment":       sentiment,
+        "sentiment_scores":sent_scores,
+        "key_phrases":     key_phrases,
+        "document_stats": {
+            "word_count":           words,
+            "sentence_count":       sents,
+            "reading_time_minutes": round(words / 200, 1),
+            "language":             lang,
+            "lexical_diversity":    lex,
+            "readability":          rd,
+        },
+        "processing_time_seconds": elapsed,
+    }
 
 
-# ── RENDER RESULTS ────────────────────────────────────────────────────────────
-if "result" in st.session_state:
-    r  = st.session_state["result"]
-    fn = st.session_state.get("filename","document")
-
-    st.markdown('<div class="sec-div"></div>', unsafe_allow_html=True)
-
-    # Header
-    st.markdown("""
-    <div class="res-header">
-      <div class="res-title">Analysis Results</div>
-      <div class="res-ok">✓ Complete</div>
-    </div>""", unsafe_allow_html=True)
-
-    # ── METRICS ───────────────────────────────────────────────────────────────
-    st_obj = r.get("document_stats", {})
-    m1, m2, m3, m4 = st.columns(4)
-    for col, val, lbl in [
-        (m1, st_obj.get("word_count","-"), "Words"),
-        (m2, st_obj.get("sentence_count","-"), "Sentences"),
-        (m3, str(st_obj.get("reading_time_minutes","-"))+" min", "Min read"),
-        (m4, str(r.get("processing_time_seconds","-"))+"s", "Process time"),
-    ]:
-        col.markdown(metric_card(val, lbl), unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── RESUME PROFILE ────────────────────────────────────────────────────────
-    raw_text = " ".join([
-        r.get("summary",""),
-        " ".join(r.get("key_phrases",[])),
-        " ".join(str(v) for vals in r.get("entities",{}).values() for v in vals)
-    ])
-
-    if is_resume(r):
-        rd2 = extract_resume(r, raw_text)
-        initials = "".join(w[0] for w in rd2["name"].split()[:2]).upper() if rd2["name"] else "?"
-        contacts = ""
-        if rd2["emails"]:   contacts += f'<span class="pcon">✉ {rd2["emails"][0]}</span>'
-        if rd2["phones"]:   contacts += f'<span class="pcon">☎ {rd2["phones"][0]}</span>'
-        if rd2["locations"]:contacts += f'<span class="pcon">📍 {rd2["locations"][0]}</span>'
-        if rd2["linkedin"]: contacts += f'<span class="pcon" style="color:#d4a0ff">🔗 LinkedIn</span>'
-        if rd2["github"]:   contacts += f'<span class="pcon" style="color:#80ffe3">⌥ GitHub</span>'
-
-        st.markdown(f"""
-        <div class="profile-card">
-          <div class="profile-avatar">{initials}</div>
-          <div>
-            <div class="profile-name">{rd2["name"] or "Name not detected"}</div>
-            <div class="profile-role">{r.get("document_type","Resume / CV")}</div>
-            <div>{contacts or '<span style="color:#4a4570">No contact info detected</span>'}</div>
-          </div>
-        </div>""", unsafe_allow_html=True)
-
-    # ── SUMMARY + SENTIMENT ───────────────────────────────────────────────────
-    cs, csent = st.columns([3,2])
-
-    with cs:
-        st.markdown(card("📝 AI Summary", "", f"""
-        <div class="sum-text">{r.get("summary","No summary available.")}</div>
-        <div class="dtype-badge">{r.get("document_type","Unknown")}</div>"""), unsafe_allow_html=True)
-
-    with csent:
-        sent = r.get("sentiment","Neutral")
-        sc2  = r.get("sentiment_scores",{})
-        pos  = round((sc2.get("Positive",0))*100)
-        neu  = round((sc2.get("Neutral",0))*100)
-        neg  = round((sc2.get("Negative",0))*100)
-        scls = "s-pos" if sent=="Positive" else "s-neg" if sent=="Negative" else "s-neu"
-        st.markdown(card("😊 Sentiment", "", f"""
-        <div class="sent-label {scls}">{sent}</div>
-        <div class="sbar-label"><span>Positive</span><span>{pos}%</span></div>
-        <div class="sbar-track"><div class="sbar-fill" style="width:{pos}%;background:#00ffc2"></div></div>
-        <div class="sbar-label"><span>Neutral</span><span>{neu}%</span></div>
-        <div class="sbar-track"><div class="sbar-fill" style="width:{neu}%;background:#ff8c42"></div></div>
-        <div class="sbar-label"><span>Negative</span><span>{neg}%</span></div>
-        <div class="sbar-track"><div class="sbar-fill" style="width:{neg}%;background:#ff3d5a"></div></div>
-        """), unsafe_allow_html=True)
-
-    # ── RESUME SECTIONS ───────────────────────────────────────────────────────
-    if is_resume(r):
-        rd2 = extract_resume(r, raw_text)
-
-        # Skills
-        skills_html = "".join(f'<span class="skill-tag">{s}</span>' for s in rd2["skills"]) if rd2["skills"] else '<span style="color:#4a4570;font-size:13px">No specific skills detected.</span>'
-        st.markdown(card("⚡ Skills Detected", "", f'<div class="skill-wrap">{skills_html}</div>'), unsafe_allow_html=True)
-
-        # Projects + Experience
-        cp, ce = st.columns(2)
-        with cp:
-            proj_html = "".join(f'<div class="sec-item">{p}</div>' for p in rd2["projects"]) if rd2["projects"] else '<div style="color:#4a4570;font-size:13px;padding:8px 0">No projects detected.</div>'
-            st.markdown(card("💻 Projects", "", proj_html), unsafe_allow_html=True)
-        with ce:
-            exp_html = "".join(f'<div class="sec-item">{e}</div>' for e in rd2["experience"]) if rd2["experience"] else '<div style="color:#4a4570;font-size:13px;padding:8px 0">No experience detected.</div>'
-            st.markdown(card("💼 Experience", "", exp_html), unsafe_allow_html=True)
-
-        # Education + Achievements
-        ced, cac = st.columns(2)
-        with ced:
-            edu_html = "".join(f'<div class="sec-item">{e}</div>' for e in rd2["education"]) if rd2["education"] else '<div style="color:#4a4570;font-size:13px;padding:8px 0">No education info detected.</div>'
-            st.markdown(card("🎓 Education", "", edu_html), unsafe_allow_html=True)
-        with cac:
-            ach_html = "".join(f'<div class="sec-item">{a}</div>' for a in rd2["achievements"]) if rd2["achievements"] else '<div style="color:#4a4570;font-size:13px;padding:8px 0">No achievements detected.</div>'
-            st.markdown(card("🏆 Achievements", "", ach_html), unsafe_allow_html=True)
-
-        # Missing fields
-        if rd2["missing"]:
-            tags = "".join(f'<span class="miss-tag">{m}</span>' for m in rd2["missing"])
-            st.markdown(f"""
-            <div class="missing-wrap">
-              <div class="missing-title">⚠ Missing fields — add these to strengthen your resume</div>
-              <div>{tags}</div>
-            </div>""", unsafe_allow_html=True)
-
-    # ── ENTITIES ──────────────────────────────────────────────────────────────
-    ents = r.get("entities",{})
-    ent_html = ""
-    has_ents = False
-    for k,(lbl,fg,bg) in EC.items():
-        vals = ents.get(k,[])
-        if not vals: continue
-        has_ents = True
-        tags = "".join(f'<span class="etag" style="background:{bg};color:{fg}">{v}</span>' for v in vals)
-        ent_html += f'<div style="margin-bottom:12px"><div class="ent-group-title">{lbl}</div><div>{tags}</div></div>'
-    if not has_ents:
-        ent_html = '<span style="color:#4a4570;font-size:13px">No entities detected.</span>'
-    st.markdown(card("🏷️ Named Entities", "", f'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px">{ent_html}</div>'), unsafe_allow_html=True)
-
-    # ── KEYPHRASES + READABILITY ──────────────────────────────────────────────
-    ck, cr = st.columns(2)
-
-    with ck:
-        kp = r.get("key_phrases",[])
-        pills = "".join(f'<span class="kpill">{k}</span>' for k in kp) if kp else '<span style="color:#4a4570;font-size:13px">None detected.</span>'
-        st.markdown(card("🔑 Key Phrases","", f'<div class="kp-wrap">{pills}</div>'), unsafe_allow_html=True)
-
-    with cr:
-        rd3 = st_obj.get("readability",{})
-        read_items = [
-            (rd3.get("flesch_reading_ease","-"), "#b847ff", "Flesch Ease"),
-            (rd3.get("flesch_kincaid_grade","-"), "#ff4dca", "FK Grade"),
-            (rd3.get("gunning_fog_index","-"), "#ff3d5a", "Gunning Fog"),
-            (rd3.get("interpretation","-"), "#00ffc2", "Interpretation"),
-        ]
-        ri_html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
-        for val, clr, lbl in read_items:
-            ri_html += f'<div class="read-item"><div class="read-val" style="color:{clr}">{val}</div><div class="read-key">{lbl}</div></div>'
-        ri_html += f'</div><div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(184,71,255,0.1);font-size:11px;color:#4a4570;display:flex;gap:18px"><span>Language: <b style="color:rgba(255,255,255,0.65)">{st_obj.get("language","en").upper()}</b></span><span>Lex div: <b style="color:rgba(255,255,255,0.65)">{st_obj.get("lexical_diversity",0):.3f}</b></span></div>'
-        st.markdown(card("📈 Readability","", ri_html), unsafe_allow_html=True)
-
-    # ── RAW JSON ──────────────────────────────────────────────────────────────
-    with st.expander("View raw JSON response"):
-        st.json(r)
-
-    # ── DOWNLOAD ──────────────────────────────────────────────────────────────
-    json_str = json.dumps(r, indent=2, ensure_ascii=False)
-    st.download_button(
-        "⬇️ Download full JSON result",
-        data=json_str,
-        file_name=Path(fn).stem + "_analysis.json",
-        mime="application/json",
-        use_container_width=True,
-    )
-
-elif not uploaded:
-    st.markdown("""
-    <div style="text-align:center;padding:5rem 2rem">
-      <div style="font-size:4.5rem;margin-bottom:1rem;opacity:0.4">⬡</div>
-      <div style="font-size:15px;color:#4a4570;font-weight:300">Upload a document above to begin analysis</div>
-      <div style="font-size:12px;color:#2a2550;margin-top:8px">PDF &bull; DOCX &bull; JPG &bull; PNG &bull; BMP &bull; TIFF &bull; WEBP</div>
-    </div>""", unsafe_allow_html=True)
-
-# ── FOOTER ────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="app-footer">
-  HCL GUVI BuildBridge Hackathon 2026 &mdash; Track 2: AI Document Analysis &nbsp;&bull;&nbsp;
-  <a href="https://github.com/Chirag0071/AI-Document-Analysis" target="_blank">GitHub</a>
-  &nbsp;&bull;&nbsp;
-  <a href="http://127.0.0.1:8000/docs" target="_blank">API Docs</a>
-</div>""", unsafe_allow_html=True)
+# ─── Entry point ──────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
