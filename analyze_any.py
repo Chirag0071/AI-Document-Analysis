@@ -1,11 +1,6 @@
 """
 analyze_any.py — Analyze ANY document from your PC without changing any code.
 
-Usage:
-    python analyze_any.py                    → shows menu to pick file
-    python analyze_any.py myfile.pdf         → analyze specific file
-    python analyze_any.py invoice.pdf pdf    → specify type manually
-
 Supports: PDF, DOCX, JPG, JPEG, PNG, BMP, TIFF, WEBP
 """
 

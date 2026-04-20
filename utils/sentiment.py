@@ -1,15 +1,6 @@
 """
 utils/sentiment.py — 4-model ensemble sentiment analysis.
 
-Models:
-  1. Groq LLM (via processor.py — most accurate)
-  2. VADER — rule-based
-  3. TextBlob — pattern-based
-  4. FinBERT / DistilBERT — transformer (optional)
-  5. Decision Tree meta-classifier combining all scores
-
-Groq result is used as primary label when available.
-ML ensemble provides scores and fallback label.
 """
 
 import re

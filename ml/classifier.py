@@ -1,8 +1,5 @@
 """
 ml/classifier.py — Document Type Classification.
-
-Random Forest (300 trees) + TF-IDF (800 features, bigrams)
-10 document types. Keyword fallback if sklearn unavailable.
 """
 
 import re

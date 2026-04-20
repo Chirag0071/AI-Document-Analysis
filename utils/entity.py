@@ -6,6 +6,7 @@ Layer 2 : spaCy en_core_web_lg
 Layer 3 : 25+ regex patterns
 Layer 4 : Random Forest post-filter
 Layer 5 : Deduplication + garbage removal
+
 """
 
 import re
@@ -33,6 +34,56 @@ def _get_nlp():
             logger.warning("No spaCy model — regex only")
     return _nlp
 
+
+# ── Tech tool / framework / library blocklist ─────────────────────────────────
+# spaCy frequently mis-tags these as PERSON or ORG. We block them explicitly.
+
+_TECH_TOOLS = {
+    # AI / ML frameworks & models
+    "tensorflow","pytorch","keras","sklearn","scikit","scikit-learn",
+    "xgboost","lightgbm","catboost","huggingface","transformers",
+    "langchain","openai","anthropic","cohere","mistral","llama","llama2",
+    "megatron","gpt","bert","roberta","albert","distilbert","t5","falcon",
+    "stable diffusion","midjourney","dalle","whisper","clip","yolo",
+    "opencv","pillow","pil","matplotlib","seaborn","plotly","bokeh",
+    "mlflow","wandb","optuna","ray","dask","cudf","rapids","cuml",
+    "onnx","triton","tensorrt","tflite","coreml","caffe","theano","mxnet",
+    # Cloud / DevOps
+    "docker","kubernetes","k8s","terraform","ansible","jenkins","github",
+    "gitlab","bitbucket","circleci","travis","helm","istio","prometheus",
+    "grafana","kibana","elasticsearch","logstash","fluentd",
+    "aws","azure","gcp","heroku","vercel","netlify","cloudflare","nginx",
+    "apache","gunicorn","uvicorn","celery","redis","rabbitmq","kafka",
+    # Databases
+    "mongodb","postgresql","mysql","sqlite","oracle","cassandra","dynamodb",
+    "neo4j","pinecone","weaviate","qdrant","chroma","faiss","milvus",
+    "snowflake","bigquery","redshift","hive","spark","hadoop","airflow",
+    # Web frameworks
+    "fastapi","flask","django","express","nextjs","nuxtjs","gatsby",
+    "react","angular","vue","svelte","jquery","bootstrap","tailwind",
+    "graphql","grpc","websocket","rest","restful","swagger","openapi",
+    # Languages (often tagged as ORG by spaCy)
+    "python","javascript","typescript","golang","rust","scala","kotlin",
+    "swift","java","cplusplus","csharp","ruby","perl","matlab","julia",
+    "bash","powershell","groovy","haskell","erlang","elixir","clojure",
+    # Tools / Platforms
+    "linux","ubuntu","debian","centos","fedora","macos","windows",
+    "git","jira","confluence","slack","notion","trello","asana",
+    "figma","sketch","invision","zeplin","adobe","photoshop","illustrator",
+    "vscode","vim","emacs","jupyter","colab","kaggle","tableau","powerbi",
+    "excel","powerpoint","word","sharepoint","salesforce","hubspot",
+    # Specific tools flagged in testing
+    "streamlit","gradio","dash","shiny","panel","voila",
+    "pdfplumber","pymupdf","pytesseract","tesseract","spacy","nltk",
+    "yake","textblob","vader","finbert","langdetect","textstat",
+    "pydantic","sqlalchemy","alembic","httpx","aiohttp","requests",
+    "numpy","pandas","scipy","statsmodels","networkx","igraph",
+    "selenium","playwright","beautifulsoup","scrapy","puppeteer",
+    # Acronyms spaCy tags as entities
+    "api","sdk","ide","cli","gui","ui","ux","nlp","llm","rag","mlops",
+    "devops","cicd","ci","cd","etl","elt","eda","poc","mvp","saas",
+    "paas","iaas","vcs","orm","mvc","restapi","graphqlapi",
+}
 
 # ── Regex Patterns ────────────────────────────────────────────────────────────
 
@@ -81,11 +132,18 @@ _STOPWORDS = {
 
 # OCR noise words that appear falsely in PERSON entities
 _OCR_NOISE = {
-    "nee","transformed","boosted","developed","focused","skilled",
+    "transformed","boosted","developed","focused","skilled",
     "experienced","motivated","passionate","dedicated","creative",
     "responsible","managed","designed","created","delivered",
     "worked","achieved","improved","increased","reduced","enhanced",
     "implemented","coordinated","collaborated","mentoring","packaging",
+    # Job title fragments spaCy falsely tags as names
+    "engineer","developer","designer","analyst","scientist","manager",
+    "director","officer","consultant","specialist","associate","intern",
+    "senior","junior","lead","head","chief","president","vice",
+    # Common OCR fragments
+    "summary","objective","profile","skills","education","experience",
+    "projects","achievements","contact","address","portfolio",
 }
 
 # Sentence fragments wrongly tagged as ORGs
@@ -95,6 +153,9 @@ _FAKE_ORGS = {
     "online banking","cloud infrastructure","security researchers",
     "regulatory authorities","government agencies","technology experts",
     "financial analysts","cybersecurity experts","cybersecurity analysts",
+    "machine learning","deep learning","natural language processing",
+    "computer vision","artificial intelligence","data science",
+    "open source","open-source","software development","web development",
 }
 
 
@@ -146,41 +207,55 @@ class _RFFilter:
 # ── Validators ────────────────────────────────────────────────────────────────
 
 def _valid_amount(s: str) -> bool:
-    """Must contain at least 2 consecutive digits."""
     return bool(re.search(r"\d{2,}", s))
 
 def _valid_name(s: str) -> bool:
-    """Must look like a real person name."""
+    """Must look like a real person name — not a tech tool or OCR noise."""
     words = s.split()
     if len(words) < 1 or len(words) > 5:
         return False
-    # Must start with capital
     if not words[0][0].isupper():
         return False
-    # Must not contain OCR noise words
+    # Reject if any word is a known tech tool (case-insensitive)
+    sl = s.lower()
+    if sl in _TECH_TOOLS:
+        return False
+    for w in words:
+        if w.lower() in _TECH_TOOLS:
+            return False
+    # Reject OCR noise words
     if any(w.lower() in _OCR_NOISE for w in words):
         return False
-    # Must not be all caps (OCR artifact)
-    if s == s.upper() and len(s) > 3:
+    # Must not be all caps (OCR artifact) — except common abbreviations like "AI"
+    if s == s.upper() and len(s) > 4:
         return False
     # Must be mostly letters
     alnum = sum(c.isalpha() or c.isspace() for c in s)
     if alnum / max(len(s), 1) < 0.8:
         return False
+    # Reject single-word entries that are generic English words
+    if len(words) == 1 and len(s) < 4:
+        return False
     return True
 
 def _valid_org(s: str) -> bool:
     """Must look like a real organization name."""
-    if s.lower() in _FAKE_ORGS:
+    sl = s.lower().strip()
+    if sl in _FAKE_ORGS:
         return False
+    # Single-word tech tools are NOT orgs (e.g. "TensorFlow", "Docker")
     words = s.split()
-    if len(words) > 6:
+    if len(words) == 1 and sl in _TECH_TOOLS:
+        return False
+    # Reject very long entries (likely sentences)
+    if len(words) > 8:
+        return False
+    # Reject if all words are tech tools (e.g. "Python Django Flask")
+    if len(words) >= 2 and all(w.lower() in _TECH_TOOLS for w in words):
         return False
     return True
 
 def _valid_date(s: str) -> bool:
-    """Must be a specific date, not vague like 'the past few years'."""
-    # Must contain a 4-digit year OR a clear date pattern
     return bool(re.search(r"\b\d{4}\b|\b\d{1,2}[\/\-\.]\d{1,2}", s))
 
 
@@ -231,6 +306,9 @@ class EntityExtractor:
             if not val or len(val) < 2:
                 continue
             if val.lower() in _STOPWORDS:
+                continue
+            # Block tech tools early — before RF filter
+            if val.lower() in _TECH_TOOLS:
                 continue
             if not self._rf.is_valid(val, ent.label_):
                 continue
