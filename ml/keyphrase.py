@@ -32,20 +32,24 @@ _STOPWORDS = {
 
 # Keyphrases that look real but are noise / should never appear in skills
 KP_STOP = {
-    "video","senior","junior","lead","manager","engineer","scientist",
+    "using","video","senior","junior","lead","manager","engineer","scientist",
     "analyst","developer","designer","intern","candidate","professional",
     "specialist","experience","skills","education","projects","work",
-    "role","team","years","data","kaggle","streamlit","youtube",
-    "github","langchan","information","please","contact",
-    "looking","seeking","seeking","motivated","passionate","dedicated",
+    "role","team","years","data","linkedin","kaggle","stream","youtube",
+    "github","gahub","gitlab","langcham","langchain","information","please",
+    "contact","looking","seeking","motivated","passionate","dedicated",
     "creative","responsible","overview","objective","summary","profile",
     "reference","available","request","currently","previous","following",
     "including","related","various","different","multiple","several",
-    # Job title fragments
+    # Job title phrases (exact and partial) — should not appear as skills/keyphrases
     "data scientist","machine learning engineer","software engineer",
     "data analyst","product manager","project manager","full stack",
-    "frontend","backend","frontend developer","backend developer",
-    "data scientist",
+    "front end","back end","frontend developer","backend developer",
+    "senior data scientist","junior data scientist","associate data",
+    "linkedin data scientist","linkedin machine","linkedin profile",
+    "linkedin data","natural language","language processing",
+    "experience stealth","full stack machine","stealth startup",
+    "kaggle master","language","natural",
 }
 
 
