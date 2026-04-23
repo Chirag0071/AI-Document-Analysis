@@ -7,6 +7,19 @@ Layer 3 : 25+ regex patterns
 Layer 4 : Random Forest post-filter
 Layer 5 : Deduplication + garbage removal
 
+FIX LOG v3 (based on live resume OCR output):
+  - _TECH_TOOLS: 200+ entry blocklist stops tech tools appearing as PERSON/ORG.
+  - _LOCATION_BLOCKLIST: blocks social platforms & OCR garbage from locations
+    (YouTube, Gahub, Langcham, Stream, Github, etc.)
+  - _JOB_TITLE_WORDS: words that indicate a string is a job role, not an org
+    (Tech Stack, Data Scientist, Senior, Mentor, Team, etc.)
+  - _valid_name(): rejects OCR-garbled multi-word phrases — requires names to
+    have ONLY title-case single words (no lowercase interior words, no numbers,
+    no special chars like &, -, |). Max 3 words for a person name.
+  - _valid_org(): rejects strings containing job-title words, date fragments,
+    symbols like & and |, and strings that are clearly project names or descriptions.
+  - _valid_location(): new function — rejects social platforms, tech tools,
+    OCR words, and single words that are clearly not places.
 """
 
 import re
@@ -83,6 +96,63 @@ _TECH_TOOLS = {
     "api","sdk","ide","cli","gui","ui","ux","nlp","llm","rag","mlops",
     "devops","cicd","ci","cd","etl","elt","eda","poc","mvp","saas",
     "paas","iaas","vcs","orm","mvc","restapi","graphqlapi",
+    # OCR aliases — common Tesseract mangling of tech tool names
+    "keres",       # keras
+    "toreh",       # pytorch
+    "pythan",      # python
+    "pal","palm",  # PaLM model
+    "ineuron",     # iNeuron (platform, not a person/place)
+    "docblend",    # DocBlend Hub
+    "fleabsty",    # OCR garbage
+    "destébert","destebert",  # DistilBERT
+    "carcie",      # CircleCI
+    "moviepy","moviepython",  # MoviePy
+    "gahub","gaahub",         # GitHub OCR variants
+    "langcham",               # LangChain OCR variant
+    "customtinker",           # CustomTkinter
+    "nlpx","nlpxtransformer", # OCR garbage
+    "vectorstores","vectorstore", # vector DB tool
+    "evidently",   # Evidently AI
+    "elmo","roberta","albert","t5model", # more model names
+}
+
+# ── Location blocklist ────────────────────────────────────────────────────────
+# spaCy tags social platforms, tech tools, and OCR garbage as GPE/LOC.
+
+_LOCATION_BLOCKLIST = {
+    # Social / streaming platforms
+    "youtube","github","gahub","gitlab","linkedin","twitter","facebook",
+    "instagram","medium","kaggle","twitch","tiktok","discord","telegram",
+    "stream","streams","langcham","langchain","huggingface",
+    # Tech tools spaCy tags as locations
+    "docker","kubernetes","aws","azure","gcp","heroku","vercel",
+    "mongodb","postgresql","mysql","redis","kafka","spark","hadoop",
+    "python","javascript","typescript","react","angular","vue",
+    "tensorflow","pytorch","keras","bert","gpt","llm","nlp","rag",
+    "fastapi","flask","django","express","nodejs","node",
+    "opencv","pandas","numpy","scipy","sklearn","xgboost",
+    "mlflow","wandb","airflow","celery","nginx","apache",
+    # OCR garbage words
+    "gahub","langcham","ineuron","docblend","fleabsty","customtinker",
+    "vectorstores","nlpx","destébert","carcie","heelthcare",
+    # Generic non-location words
+    "stack","backend","frontend","fullstack","cloud","platform",
+    "model","models","data","code","app","application","system",
+    "web","mobile","api","service","pipeline","framework",
+}
+
+# ── Job-title word set for ORG validation ─────────────────────────────────────
+# If an entity contains these words it's a job description, not an org name.
+
+_JOB_TITLE_WORDS = {
+    "senior","junior","lead","head","chief","principal","staff",
+    "data scientist","data science","machine learning","deep learning",
+    "software engineer","data analyst","product manager","project manager",
+    "tech stack","technology stack","full stack","frontend","backend",
+    "mentor","mentee","team lead","team member","intern","associate",
+    "present","current","ongoing","oct'","jan'","feb'","mar'","apr'",
+    "may'","jun'","jul'","aug'","sep'","nov'","dec'",
+    "nup","hlp","chabot","chatbot","vlp","nlpx","poc",
 }
 
 # ── Regex Patterns ────────────────────────────────────────────────────────────
@@ -132,7 +202,7 @@ _STOPWORDS = {
 
 # OCR noise words that appear falsely in PERSON entities
 _OCR_NOISE = {
-    "transformed","boosted","developed","focused","skilled",
+    "nee","transformed","boosted","developed","focused","skilled",
     "experienced","motivated","passionate","dedicated","creative",
     "responsible","managed","designed","created","delivered",
     "worked","achieved","improved","increased","reduced","enhanced",
@@ -144,6 +214,11 @@ _OCR_NOISE = {
     # Common OCR fragments
     "summary","objective","profile","skills","education","experience",
     "projects","achievements","contact","address","portfolio",
+    # Words that NEVER appear in a real human name
+    "tech","stack","hub","core","model","layer","module","service",
+    "system","platform","cloud","data","api","web","app","tool",
+    "framework","library","network","pipeline","workflow","engine",
+    "team","group","division","department","unit","center","lab",
 }
 
 # Sentence fragments wrongly tagged as ORGs
@@ -210,49 +285,144 @@ def _valid_amount(s: str) -> bool:
     return bool(re.search(r"\d{2,}", s))
 
 def _valid_name(s: str) -> bool:
-    """Must look like a real person name — not a tech tool or OCR noise."""
+    """Must look like a real human name — strict rules to eliminate OCR garbage."""
+    s = s.strip()
     words = s.split()
-    if len(words) < 1 or len(words) > 5:
+
+    # Person names are 1–3 words max
+    if len(words) < 1 or len(words) > 3:
         return False
-    if not words[0][0].isupper():
+
+    # Every word must start with a capital letter
+    if not all(w[0].isupper() for w in words if w):
         return False
-    # Reject if any word is a known tech tool (case-insensitive)
+
+    # No lowercase interior words (eliminates "Qeneraton exclusively Lalored",
+    # "Reect Visdum AI Application", "Video Summanzaton" etc.)
+    for w in words:
+        if len(w) > 1 and not w[0].isupper():
+            return False
+
+    # No special characters (eliminates "Data Scientist & Mentor", "NUP - LSTM")
+    if re.search(r"[&|\-\+\(\)\[\]\/\\@#\$\*\d]", s):
+        return False
+
+    # All chars must be letters, spaces, or apostrophes (for O'Brien etc.)
+    if not re.match(r"^[A-Za-z\s\'\.]+$", s):
+        return False
+
+    # Reject OCR-corruption suffix patterns (manzaton, aton, visdum, reect etc.)
+    _ocr_suffix = re.compile(
+        r"(aton|eton|izaton|manzaton|visdum|reect|qener|laored|"
+        r"fleab|sty$|nzat|mmanz|ummar)$",
+        re.IGNORECASE
+    )
+    for w in words:
+        if _ocr_suffix.search(w):
+            return False
+
+    # Reject tech tools
     sl = s.lower()
     if sl in _TECH_TOOLS:
         return False
     for w in words:
         if w.lower() in _TECH_TOOLS:
             return False
-    # Reject OCR noise words
+
+    # Reject OCR noise / job title words
     if any(w.lower() in _OCR_NOISE for w in words):
         return False
-    # Must not be all caps (OCR artifact) — except common abbreviations like "AI"
-    if s == s.upper() and len(s) > 4:
+
+    # Reject all-caps entries (OCR abbreviations) — allow 2-char initials
+    if s == s.upper() and len(s) > 3:
         return False
+
     # Must be mostly letters
     alnum = sum(c.isalpha() or c.isspace() for c in s)
-    if alnum / max(len(s), 1) < 0.8:
+    if alnum / max(len(s), 1) < 0.85:
         return False
-    # Reject single-word entries that are generic English words
-    if len(words) == 1 and len(s) < 4:
+
+    # Each word must be at least 2 chars (eliminates single-letter noise)
+    if any(len(w) < 2 for w in words):
         return False
+
     return True
 
 def _valid_org(s: str) -> bool:
-    """Must look like a real organization name."""
+    """Must look like a real organization — not a job title, tech stack, or description."""
     sl = s.lower().strip()
+
+    # Explicit fake org fragments
     if sl in _FAKE_ORGS:
         return False
-    # Single-word tech tools are NOT orgs (e.g. "TensorFlow", "Docker")
+
     words = s.split()
+
+    # Too long = sentence fragment
+    if len(words) > 6:
+        return False
+
+    # Reject strings with date fragments like "Oct'22 - Present"
+    if re.search(r"(oct|jan|feb|mar|apr|may|jun|jul|aug|sep|nov|dec)'?\s*\d{2}", sl):
+        return False
+    if re.search(r"\d{4}\s*[-–]\s*(present|current|\d{4})", sl):
+        return False
+
+    # Reject if it contains job-title indicator words
+    for jt in _JOB_TITLE_WORDS:
+        if jt in sl:
+            return False
+
+    # Reject strings that are clearly tech descriptions (contain & | between tech terms)
+    if re.search(r"\b(lstm|bert|gpt|rag|nlp|llm|mlops|dvc|mlflow)\b", sl):
+        return False
+
+    # Single-word tech tools are NOT orgs
     if len(words) == 1 and sl in _TECH_TOOLS:
         return False
-    # Reject very long entries (likely sentences)
-    if len(words) > 8:
-        return False
-    # Reject if all words are tech tools (e.g. "Python Django Flask")
+
+    # If all words are tech tools → not an org
     if len(words) >= 2 and all(w.lower() in _TECH_TOOLS for w in words):
         return False
+
+    # Reject strings starting with common non-org words
+    first = words[0].lower() if words else ""
+    if first in {"tech","data","machine","deep","natural","computer","software",
+                 "open","full","front","back","web","mobile","cloud","core",
+                 "hlp","nup","vlp","nlpx","poc","deta"}:
+        return False
+
+    return True
+
+def _valid_location(s: str) -> bool:
+    """Must be an actual geographic place — not a platform, tool, or OCR word."""
+    sl = s.lower().strip()
+
+    # Explicit blocklist
+    if sl in _LOCATION_BLOCKLIST:
+        return False
+
+    # Tech tools in location position
+    if sl in _TECH_TOOLS:
+        return False
+
+    # Single short words that aren't real places (OCR noise)
+    words = s.split()
+    if len(words) == 1:
+        # Allow known country/city single words but reject anything suspicious
+        if len(s) < 3:
+            return False
+        # Reject words with numbers or special chars
+        if re.search(r"[\d&|@#\$\*\+\(\)\[\]]", s):
+            return False
+        # Reject all-lowercase single words (OCR garbage)
+        if s == s.lower() and s not in {"india","usa","uk","uae","us"}:
+            return False
+
+    # Reject if it contains obvious tech indicators
+    if re.search(r"\b(api|sdk|db|ml|ai|nlp|llm|gpt|bert|url|http)\b", sl):
+        return False
+
     return True
 
 def _valid_date(s: str) -> bool:
@@ -320,7 +490,8 @@ class EntityExtractor:
                 if _valid_org(val):
                     result["organizations"].append(val)
             elif ent.label_ in ("GPE", "LOC", "FAC"):
-                result["locations"].append(val)
+                if _valid_location(val):
+                    result["locations"].append(val)
             elif ent.label_ in ("DATE", "TIME"):
                 if _valid_date(val):
                     result["dates"].append(val)
