@@ -1,9 +1,3 @@
-"""
-analyze_any.py — Analyze ANY document from your PC without changing any code.
-
-Supports: PDF, DOCX, JPG, JPEG, PNG, BMP, TIFF, WEBP
-"""
-
 import base64
 import json
 import sys

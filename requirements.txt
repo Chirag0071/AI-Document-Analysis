@@ -19,3 +19,4 @@ textblob==0.18.0
 yake==0.4.8
 langdetect==1.0.9
 pydantic==2.7.1
+

@@ -1,9 +1,3 @@
-"""
-main.py — AI-Powered Document Analysis API
-Run from the HCL/ folder:
-    uvicorn main:app --reload
-"""
-
 import os
 import sys
 import base64
