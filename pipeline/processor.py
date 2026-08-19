@@ -1,32 +1,22 @@
-"""
-pipeline/processor.py — Master orchestrator.
-
-Strategy:
-  1. Extract text (PDF/DOCX/Image)
-  2. Try ONE Groq call → returns summary + entities + sentiment together
-  3. If Groq fails → fall back to individual ML/NLP modules
-  4. Always merge Groq + spaCy entities for best coverage
-"""
-
 import os
 import sys
 import json
 import logging
-
+ 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+ 
 from utils.extractor import TextExtractor
 from utils.preprocessor import TextPreprocessor
-from utils.summarizer import Summarizer, groq_full_analysis
+from utils.summarizer import Summarizer, groq_full_analysis, is_summary_usable
 from utils.entity import EntityExtractor
 from utils.sentiment import SentimentAnalyzer
 from utils.stats import DocumentStats
 from ml.classifier import DocumentClassifier
 from ml.keyphrase import KeyphraseExtractor
-
+ 
 logger = logging.getLogger(__name__)
-
-
+ 
+ 
 def _merge_entities(groq_ents: dict, spacy_ents: dict) -> dict:
     """
     Merge entities from Groq LLM and spaCy NER.
@@ -47,8 +37,8 @@ def _merge_entities(groq_ents: dict, spacy_ents: dict) -> dict:
                 seen[k] = str(item).strip()
         result[key] = list(seen.values())
     return result
-
-
+ 
+ 
 def _clean_groq_entities(ents: dict) -> dict:
     """Remove obvious garbage from Groq entity output."""
     import re
@@ -71,11 +61,11 @@ def _clean_groq_entities(ents: dict) -> dict:
             clean.append(v)
         cleaned[key] = clean
     return cleaned
-
-
+ 
+ 
 class DocumentProcessor:
     """Loads all models once at startup; process() called per request."""
-
+ 
     def __init__(self):
         self._extractor    = TextExtractor()
         self._preprocessor = TextPreprocessor()
@@ -85,29 +75,31 @@ class DocumentProcessor:
         self._stats        = DocumentStats()
         self._classifier   = DocumentClassifier()
         self._keyphrase    = KeyphraseExtractor()
-
+ 
     def process(self, file_bytes: bytes, file_type: str, file_name: str) -> dict:
-
+ 
         # ── 1. Extract raw text ────────────────────────────────────────────
         raw_text = self._extractor.extract(file_bytes, file_type)
         if not raw_text or not raw_text.strip():
             raise ValueError("No text could be extracted from the document.")
-
+ 
         # ── 2. Clean text ──────────────────────────────────────────────────
         clean_text = self._preprocessor.clean(raw_text)
-
+ 
         # ── 3. Try Groq full analysis (summary + entities + sentiment) ─────
         groq_result = groq_full_analysis(clean_text)
-
+ 
         # ── 4. Extract with spaCy + regex (always runs) ───────────────────
         spacy_entities = self._ner.extract(clean_text)
-
+ 
         # ── 5. Decide summary ─────────────────────────────────────────────
-        if groq_result.get("summary") and len(groq_result["summary"]) > 30:
+        # Quality check (sentence count + not-a-raw-excerpt) instead of a
+        # crude character-length threshold.
+        if is_summary_usable(groq_result.get("summary", ""), clean_text):
             summary = groq_result["summary"]
         else:
             summary = self._summarizer.summarize(clean_text)
-
+ 
         # ── 6. Decide sentiment ───────────────────────────────────────────
         if groq_result.get("sentiment") in ("Positive", "Negative", "Neutral"):
             sentiment_label = groq_result["sentiment"]
@@ -126,20 +118,20 @@ class DocumentProcessor:
             ml_sentiment = self._sentiment.analyze(clean_text)
             sentiment_label = ml_sentiment["label"]
             sentiment_scores = ml_sentiment["scores"]
-
+ 
         # ── 7. Merge entities (Groq + spaCy for best coverage) ────────────
         groq_ents = _clean_groq_entities(groq_result.get("entities", {}))
         merged_entities = _merge_entities(groq_ents, spacy_entities)
-
+ 
         # ── 8. Document classification ────────────────────────────────────
         doc_type = self._classifier.classify(clean_text)
-
+ 
         # ── 9. Key-phrases ────────────────────────────────────────────────
         keyphrases = self._keyphrase.extract(clean_text)
-
+ 
         # ── 10. Statistics ────────────────────────────────────────────────
         stats = self._stats.compute(raw_text, clean_text)
-
+ 
         return {
             "status":           "success",
             "fileName":         file_name,
