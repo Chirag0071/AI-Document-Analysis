@@ -12,19 +12,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ── Tesseract path for Windows ────────────────────────────────────────────────
+# ── Tesseract path (Windows dev + Linux/Render prod) ─────────────────────────
 try:
     import pytesseract
     import os
-    # Common Windows Tesseract paths
-    for path in [
-        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        r"C:\Users\hp\AppData\Local\Programs\Tesseract-OCR\tesseract.exe",
-    ]:
-        if os.path.exists(path):
-            pytesseract.pytesseract.tesseract_cmd = path
-            break
+    import shutil
+
+    if shutil.which("tesseract"):
+        # Linux / Render — tesseract is on PATH
+        pytesseract.pytesseract.tesseract_cmd = "tesseract"
+    else:
+        # Windows dev fallback
+        for path in [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            r"C:\Users\hp\AppData\Local\Programs\Tesseract-OCR\tesseract.exe",
+        ]:
+            if os.path.exists(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                break
 except Exception:
     pass
 
