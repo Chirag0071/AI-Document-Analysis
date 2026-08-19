@@ -22,7 +22,7 @@ st.set_page_config(
 
 # ── Config ────────────────────────────────────────────────────────────────────
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
-API_KEY = os.getenv("API_KEY", "")
+API_KEY = os.getenv("API_KEY", "sk_track2_987654321")
 MAX_MB  = 150
 
 EXT_MAP = {
