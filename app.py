@@ -22,7 +22,7 @@ st.set_page_config(
 
 # ── Config ────────────────────────────────────────────────────────────────────
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
-API_KEY = os.getenv("API_KEY", "sk_track2_987654321")
+API_KEY = os.getenv("API_KEY", "")
 MAX_MB  = 150
 
 EXT_MAP = {
@@ -658,7 +658,7 @@ with cap_col:
 st.markdown(divider(), unsafe_allow_html=True)
 st.markdown(sec_label("Upload Document"), unsafe_allow_html=True)
 
-up_col, cfg_col = st.columns([3, 2])
+up_col = st.container()
 
 with up_col:
     # Format chips
@@ -692,19 +692,11 @@ with up_col:
         label_visibility="visible",
     )
 
-with cfg_col:
-    st.markdown(f"""
-    <div style="background:#fffef9;border:1px solid #e8d5a8;border-radius:16px;
-         padding:22px;box-shadow:0 2px 10px rgba(0,0,0,.05);height:100%;">
-      <div style="font-family:'Cormorant Garamond',serif;font-size:1.2rem;
-        font-weight:700;color:#1a1508;margin-bottom:14px;">Configuration</div>
-    </div>
-    """, unsafe_allow_html=True)
-    api_url = st.text_input("API URL", value=API_URL)
-    api_key = st.text_input("API Key", value=API_KEY, type="password")
-    st.markdown(f'<p style="font-size:10px;color:#8a7248;margin-top:-6px;'
-                f'font-family:''JetBrains Mono'',monospace;">⚠ Keep defaults for local server</p>',
-                unsafe_allow_html=True)
+# Configuration panel removed from UI — API URL and API Key are now
+# taken directly from environment variables (API_URL, API_KEY) so they
+# can't be viewed or edited from the browser.
+api_url = API_URL
+api_key = API_KEY
 
 
 # ─────────────────────────────────────────────────────────────────────────────
