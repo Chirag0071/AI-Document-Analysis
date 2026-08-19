@@ -1,13 +1,9 @@
-"""
-ml/classifier.py — Document Type Classification.
-"""
-
 import re
 import logging
 import random
-
+ 
 logger = logging.getLogger(__name__)
-
+ 
 LABELS = [
     "Invoice / Receipt",
     "Resume / CV",
@@ -20,7 +16,7 @@ LABELS = [
     "Legal Document",
     "General / Other",
 ]
-
+ 
 _SEEDS = {
     "Invoice / Receipt": [
         "invoice number date due amount total tax gst hsn payable bill to ship to",
@@ -93,8 +89,66 @@ _SEEDS = {
         "manual guide instructions procedure steps process workflow standard ops",
     ],
 }
-
-
+ 
+ 
+# ── Sentence-Embedding Model (lazy singleton, shared across calls) ─────────────
+ 
+_embed_model = None
+_label_embeddings = None  # np.ndarray, one centroid per label
+ 
+ 
+def _get_embed_model():
+    global _embed_model
+    if _embed_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+        except Exception as e:
+            logger.warning(f"Sentence-transformer load failed: {e}")
+    return _embed_model
+ 
+ 
+def _build_label_embeddings():
+    """Embed each label's seed phrases once, average into a centroid."""
+    global _label_embeddings
+    model = _get_embed_model()
+    if model is None:
+        return None
+    if _label_embeddings is not None:
+        return _label_embeddings
+    try:
+        import numpy as np
+        centroids = []
+        for label in LABELS:
+            seeds = _SEEDS[label]
+            vecs = model.encode(seeds, normalize_embeddings=True)
+            centroids.append(np.mean(vecs, axis=0))
+        _label_embeddings = np.vstack(centroids)
+        return _label_embeddings
+    except Exception as e:
+        logger.warning(f"Building label embeddings failed: {e}")
+        return None
+ 
+ 
+def _embedding_predict(text: str):
+    """Return (probability-vector-over-LABELS) via cosine similarity, or None."""
+    model = _get_embed_model()
+    centroids = _build_label_embeddings()
+    if model is None or centroids is None:
+        return None
+    try:
+        import numpy as np
+        vec = model.encode([text[:2000]], normalize_embeddings=True)[0]
+        sims = centroids @ vec  # cosine similarity (both normalized)
+        # Softmax-style conversion to a probability distribution
+        exp = np.exp((sims - sims.max()) * 8)  # temperature sharpens confident calls
+        probs = exp / exp.sum()
+        return probs
+    except Exception as e:
+        logger.warning(f"Embedding predict failed: {e}")
+        return None
+ 
+ 
 def _training_data():
     random.seed(42)
     X, y = [], []
@@ -109,23 +163,23 @@ def _training_data():
                 X.append(" ".join(words))
                 y.append(idx)
     return X, y
-
-
+ 
+ 
 class DocumentClassifier:
-
+ 
     def __init__(self):
         self._vec = None
         self._rf  = None
         self._build()
-
+ 
     def _build(self):
         try:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.feature_extraction.text import TfidfVectorizer
             import numpy as np
-
+ 
             X_texts, y = _training_data()
-
+ 
             self._vec = TfidfVectorizer(
                 max_features=800,
                 ngram_range=(1, 2),
@@ -133,7 +187,7 @@ class DocumentClassifier:
                 stop_words="english",
             )
             X = self._vec.fit_transform(X_texts)
-
+ 
             self._rf = RandomForestClassifier(
                 n_estimators=300,
                 max_depth=12,
@@ -145,7 +199,7 @@ class DocumentClassifier:
             logger.info("DocumentClassifier: RandomForest trained OK")
         except Exception as e:
             logger.warning(f"DocumentClassifier build failed: {e}")
-
+ 
     def _keyword_fallback(self, text: str) -> str:
         tl = text.lower()
         kw = {
@@ -162,16 +216,31 @@ class DocumentClassifier:
         scores = {l: sum(1 for k in kws if k in tl) for l, kws in kw.items()}
         best = max(scores, key=scores.get)
         return best if scores[best] > 0 else "General / Other"
-
+ 
     def classify(self, text: str) -> str:
-        if self._rf is None or self._vec is None:
+        import numpy as np
+ 
+        rf_proba = None
+        if self._rf is not None and self._vec is not None:
+            try:
+                X = self._vec.transform([text[:5000]])
+                rf_proba = self._rf.predict_proba(X)[0]
+            except Exception as e:
+                logger.warning(f"RF classify failed: {e}")
+ 
+        emb_proba = _embedding_predict(text)
+ 
+        if rf_proba is None and emb_proba is None:
             return self._keyword_fallback(text)
-        try:
-            X = self._vec.transform([text[:5000]])
-            proba = self._rf.predict_proba(X)[0]
-            if max(proba) < 0.30:
-                return "General / Other"
-            return LABELS[proba.argmax()]
-        except Exception as e:
-            logger.warning(f"RF classify failed: {e}")
-            return self._keyword_fallback(text)
+ 
+        if rf_proba is not None and emb_proba is not None:
+            # Ensemble: semantic model gets slightly more weight since it
+            # generalizes better to phrasing the lexical model never saw.
+            combined = 0.6 * emb_proba + 0.4 * rf_proba
+        else:
+            combined = emb_proba if emb_proba is not None else rf_proba
+ 
+        if max(combined) < 0.30:
+            return "General / Other"
+        return LABELS[int(np.argmax(combined))]
+ 
